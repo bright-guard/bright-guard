@@ -66,6 +66,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMemberships(me.memberships ?? []);
       setActiveOrgId(me.activeOrgId ?? null);
       setPlatformAdmin(!!me.platformAdmin);
+      // If the session has no active org but the user is in exactly one,
+      // promote it server-side so the rest of the SPA has a tenant context.
+      // Without this, dashboards render empty after a stale session resurfaces.
+      if (
+        !me.activeOrgId &&
+        me.memberships &&
+        me.memberships.length === 1
+      ) {
+        const only = me.memberships[0].org.id;
+        try {
+          await api<void>("/api/sessions/active-org", {
+            method: "POST",
+            body: JSON.stringify({ orgId: only }),
+          });
+          setActiveOrgId(only);
+        } catch (e) {
+          console.warn("auto-set active org failed", e);
+        }
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);
