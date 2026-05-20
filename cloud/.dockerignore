@@ -1,0 +1,11 @@
+**/.git
+**/.env
+**/.env.local
+**/node_modules
+web/dist
+api/internal/spa/dist
+api/bin
+api/tmp
+**/.DS_Store
+docker-compose.yml
+README.md

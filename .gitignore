@@ -2,3 +2,14 @@ public/
 resources/
 .hugo_build.lock
 .DS_Store
+
+# cloud app
+cloud/api/.env
+cloud/web/node_modules/
+cloud/web/dist/
+cloud/web/.env
+cloud/web/tsconfig.tsbuildinfo
+cloud/api/bin/
+cloud/api/tmp/
+cloud/shim/shim
+cloud/cli/seed/seed

@@ -1,0 +1,208 @@
+org:
+  name: Acme Corp
+
+# Logical MCP servers. `key` is referenced by gateways below.
+# Each server may be observed by one or both gateways.
+servers:
+  - key: github
+    name: github-mcp
+    address: stdio:///usr/local/bin/github-mcp
+    transport: stdio
+    version: 1.2.3
+    metadata:
+      vendor: github
+      tier: external
+    callers:
+      - {agent: copilot-agent, userEmail: alice@acme.example, weight: 5}
+      - {agent: copilot-agent, userEmail: bob@acme.example,   weight: 4}
+      - {agent: claude-code,   userEmail: alice@acme.example, weight: 3}
+      - {agent: cursor,        userEmail: carol@acme.example, weight: 2}
+    capabilities:
+      - {kind: tool,     name: create_issue,        description: "Create a GitHub issue"}
+      - {kind: tool,     name: list_repos,          description: "List the user's repos"}
+      - {kind: tool,     name: search_code,         description: "Search code across repos"}
+      - {kind: tool,     name: create_pull_request, description: "Open a pull request"}
+      - {kind: tool,     name: merge_pull_request,  description: "Merge a pull request"}
+      - {kind: resource, name: "repo://README",     description: "README of a repo"}
+      - {kind: resource, name: "repo://CODEOWNERS", description: "CODEOWNERS of a repo"}
+      - {kind: prompt,   name: pr_review,           description: "PR-review prompt template"}
+
+  - key: slack
+    name: slack-mcp
+    address: https://slack-mcp.internal.acme.example:8443
+    transport: streamable-http
+    version: 0.5.2
+    metadata:
+      vendor: slack
+      tier: external
+    callers:
+      - {agent: copilot-agent, userEmail: alice@acme.example, weight: 4}
+      - {agent: support-bot,   userEmail: ops@acme.example,   weight: 5}
+      - {agent: claude-code,   userEmail: bob@acme.example,   weight: 2}
+    capabilities:
+      - {kind: tool, name: post_message,    description: "Post a message to a channel"}
+      - {kind: tool, name: search_messages, description: "Search workspace messages"}
+      - {kind: tool, name: create_channel,  description: "Create a Slack channel"}
+      - {kind: tool, name: list_users,      description: "List workspace users"}
+
+  - key: jira
+    name: jira-mcp
+    address: https://jira-mcp.internal.acme.example:8443
+    transport: streamable-http
+    version: 1.0.4
+    metadata:
+      vendor: atlassian
+      tier: external
+    callers:
+      - {agent: copilot-agent, userEmail: alice@acme.example, weight: 3}
+      - {agent: copilot-agent, userEmail: dave@acme.example,  weight: 4}
+      - {agent: pm-assistant,  userEmail: erin@acme.example,  weight: 3}
+    capabilities:
+      - {kind: tool, name: create_ticket,    description: "File a Jira ticket"}
+      - {kind: tool, name: search_tickets,   description: "JQL search for tickets"}
+      - {kind: tool, name: transition_ticket,description: "Move a ticket through workflow"}
+      - {kind: tool, name: add_comment,      description: "Comment on a ticket"}
+
+  - key: pii_vault
+    name: internal-pii-vault-mcp
+    address: https://pii-vault.internal.acme.example:9443
+    transport: streamable-http
+    version: 0.2.0
+    metadata:
+      vendor: acme-internal
+      tier: internal
+      sensitivity: high
+    callers:
+      - {agent: copilot-agent, userEmail: alice@acme.example, weight: 1}
+      - {agent: support-bot,   userEmail: ops@acme.example,   weight: 2}
+    capabilities:
+      - {kind: resource, name: "pii://customers/{id}",       description: "Customer PII record"}
+      - {kind: resource, name: "pii://employees/{id}",       description: "Employee PII record"}
+      - {kind: resource, name: "pii://credit_cards/{token}", description: "Tokenised credit card"}
+      - {kind: tool,     name: tokenize,                     description: "Tokenize a raw PII value"}
+
+  - key: postgres
+    name: postgres-mcp
+    address: stdio:///usr/local/bin/postgres-mcp
+    transport: stdio
+    version: 0.3.1
+    metadata:
+      vendor: postgres
+      tier: internal
+    callers:
+      - {agent: claude-code,   userEmail: alice@acme.example, weight: 4}
+      - {agent: copilot-agent, userEmail: bob@acme.example,   weight: 3}
+      - {agent: data-analyst,  userEmail: erin@acme.example,  weight: 3}
+    capabilities:
+      - {kind: tool, name: query,           description: "Run a SQL query"}
+      - {kind: tool, name: describe_schema, description: "Describe a table schema"}
+      - {kind: tool, name: explain,         description: "EXPLAIN a query plan"}
+
+gateways:
+  - name: acme-prod-cluster-gateway
+    description: "Production cluster gateway (cluster=prod, region=us-central1)"
+    observes:
+      - server: github
+        traffic:
+          total_invocations: 180
+          hours_back: 24
+          recent_hour_weight: 0.45
+          error_rate: 0.03
+          denied_rate: 0.01
+          latency_median_ms: 90
+          latency_sigma: 0.55
+          capability_weights:
+            - {name: search_code,         weight: 30}
+            - {name: list_repos,          weight: 18}
+            - {name: create_issue,        weight: 14}
+            - {name: create_pull_request, weight: 10}
+            - {name: merge_pull_request,  weight: 4}
+            - {name: "repo://README",     weight: 16}
+            - {name: pr_review,           weight: 8}
+      - server: slack
+        traffic:
+          total_invocations: 110
+          hours_back: 24
+          recent_hour_weight: 0.5
+          error_rate: 0.02
+          denied_rate: 0.01
+          latency_median_ms: 60
+          latency_sigma: 0.45
+          capability_weights:
+            - {name: post_message,    weight: 50}
+            - {name: search_messages, weight: 30}
+            - {name: list_users,      weight: 15}
+            - {name: create_channel,  weight: 5}
+      - server: jira
+        traffic:
+          total_invocations: 70
+          hours_back: 24
+          recent_hour_weight: 0.4
+          error_rate: 0.04
+          denied_rate: 0.02
+          latency_median_ms: 140
+          latency_sigma: 0.5
+          capability_weights:
+            - {name: search_tickets,    weight: 40}
+            - {name: create_ticket,     weight: 25}
+            - {name: add_comment,       weight: 20}
+            - {name: transition_ticket, weight: 15}
+      - server: pii_vault
+        traffic:
+          total_invocations: 35
+          hours_back: 24
+          recent_hour_weight: 0.35
+          error_rate: 0.05
+          denied_rate: 0.12
+          latency_median_ms: 110
+          latency_sigma: 0.5
+          capability_weights:
+            - {name: "pii://customers/{id}",       weight: 40}
+            - {name: "pii://employees/{id}",       weight: 25}
+            - {name: "pii://credit_cards/{token}", weight: 15}
+            - {name: tokenize,                     weight: 20}
+
+  - name: acme-dev-cluster-gateway
+    description: "Development cluster gateway (cluster=dev, region=us-central1)"
+    observes:
+      - server: github
+        traffic:
+          total_invocations: 60
+          hours_back: 24
+          recent_hour_weight: 0.6
+          error_rate: 0.04
+          denied_rate: 0.01
+          latency_median_ms: 70
+          latency_sigma: 0.5
+          capability_weights:
+            - {name: search_code,         weight: 35}
+            - {name: list_repos,          weight: 20}
+            - {name: create_pull_request, weight: 15}
+            - {name: "repo://README",     weight: 20}
+            - {name: pr_review,           weight: 10}
+      - server: postgres
+        traffic:
+          total_invocations: 90
+          hours_back: 24
+          recent_hour_weight: 0.55
+          error_rate: 0.03
+          denied_rate: 0.0
+          latency_median_ms: 45
+          latency_sigma: 0.7
+          capability_weights:
+            - {name: query,           weight: 60}
+            - {name: describe_schema, weight: 25}
+            - {name: explain,         weight: 15}
+      - server: slack
+        traffic:
+          total_invocations: 30
+          hours_back: 24
+          recent_hour_weight: 0.6
+          error_rate: 0.05
+          denied_rate: 0.0
+          latency_median_ms: 70
+          latency_sigma: 0.5
+          capability_weights:
+            - {name: post_message,    weight: 60}
+            - {name: search_messages, weight: 30}
+            - {name: list_users,      weight: 10}
