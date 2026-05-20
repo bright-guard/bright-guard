@@ -14,3 +14,4 @@ cloud/api/tmp/
 cloud/shim/shim
 cloud/cli/seed/seed
 .claude/
+/cloud/cli/seed-history/seed-history
