@@ -170,7 +170,7 @@ export default function CallersPage() {
                     <span>{r.label || "(anonymous)"}</span>
                     {r.flaggedNew && (
                       <span className="rounded-full bg-amber-900/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
-                        new
+                        NEW
                       </span>
                     )}
                   </Link>

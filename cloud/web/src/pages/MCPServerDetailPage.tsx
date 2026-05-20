@@ -14,6 +14,7 @@ export default function MCPServerDetailPage() {
   const [detail, setDetail] = useState<MCPServerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reclassifying, setReclassifying] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeOrgId || !id) return;
@@ -35,6 +36,26 @@ export default function MCPServerDetailPage() {
       setError(err instanceof ApiError ? `${err.status}` : String(err));
     } finally {
       setReclassifying(false);
+    }
+  };
+
+  const toggleCapability = async (cap: MCPCapability) => {
+    if (!activeOrgId || !id) return;
+    setTogglingId(cap.id);
+    try {
+      const updated = await api<MCPServerDetail>(
+        `/api/orgs/${activeOrgId}/mcp-servers/${id}/capabilities/${cap.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: !cap.enabled }),
+        },
+      );
+      setDetail(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.status}` : String(err));
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -130,13 +151,30 @@ export default function MCPServerDetailPage() {
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Description</th>
+                    <th className="px-4 py-3 text-right">Enabled</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {byKind[kind].map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-4 py-3 font-mono text-slate-200">{c.name}</td>
+                    <tr key={c.id} className={c.enabled ? "" : "opacity-60"}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-slate-200">{c.name}</span>
+                          {!c.enabled && (
+                            <span className="rounded-full bg-rose-900/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-200">
+                              DISABLED
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-slate-400">{c.description || "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <CapabilityToggle
+                          cap={c}
+                          busy={togglingId === c.id}
+                          onToggle={() => toggleCapability(c)}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -217,5 +255,39 @@ function ExposureBadge({ state }: { state: ExposureState }) {
     >
       {EXPOSURE_LABEL[state]}
     </span>
+  );
+}
+
+function CapabilityToggle({
+  cap,
+  busy,
+  onToggle,
+}: {
+  cap: MCPCapability;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  const tip = !cap.enabled && cap.disabledAt
+    ? `Disabled by ${cap.disabledByEmail || "(unknown)"} on ${new Date(cap.disabledAt).toLocaleString()}`
+    : cap.enabled
+      ? "Click to disable"
+      : "Click to enable";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      title={tip}
+      aria-pressed={cap.enabled}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        cap.enabled ? "bg-emerald-600" : "bg-slate-700"
+      } disabled:opacity-50`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          cap.enabled ? "translate-x-4" : "translate-x-1"
+        }`}
+      />
+    </button>
   );
 }

@@ -28,10 +28,20 @@ function statusClasses(status: string): string {
     case "error":
       return "bg-rose-900/50 text-rose-300";
     case "denied":
-      return "bg-amber-900/50 text-amber-300";
+      return "bg-rose-900/60 text-rose-200 uppercase tracking-wide";
     default:
       return "bg-slate-800 text-slate-300";
   }
+}
+
+function statusLabel(status: string): string {
+  if (status === "denied") return "DENIED";
+  return status;
+}
+
+function statusTitle(status: string): string | undefined {
+  if (status === "denied") return "denied by policy";
+  return undefined;
 }
 
 function buildQuery(orgId: string, params: Record<string, string | string[]>) {
@@ -272,8 +282,9 @@ export default function ActivityPage() {
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${statusClasses(r.status)}`}
+                    title={statusTitle(r.status)}
                   >
-                    {r.status}
+                    {statusLabel(r.status)}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-400">{r.latencyMs}ms</td>
