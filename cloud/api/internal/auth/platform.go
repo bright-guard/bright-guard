@@ -26,16 +26,16 @@ func RequirePlatformAdmin(p PlatformAdminChecker) func(http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
 			if user == nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 				return
 			}
 			ok, err := p.IsActiveAdmin(r.Context(), user.ID)
 			if err != nil {
-				http.Error(w, "platform admin check failed", http.StatusInternalServerError)
+				writeError(w, http.StatusInternalServerError, "internal", "platform admin check failed")
 				return
 			}
 			if !ok {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				writeError(w, http.StatusForbidden, "forbidden", "forbidden")
 				return
 			}
 			ctx := context.WithValue(r.Context(), ctxKeyPlatformAdmin, true)

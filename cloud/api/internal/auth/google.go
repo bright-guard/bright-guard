@@ -78,12 +78,12 @@ func (g *Google) oauthConfigFor(redirectURI string) *oauth2.Config {
 func (g *Google) StartHandler(w http.ResponseWriter, r *http.Request) {
 	redirectURI, ok := g.redirectURIFor(r)
 	if !ok {
-		http.Error(w, "host not allowed", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "host not allowed")
 		return
 	}
 	state, err := randState(32)
 	if err != nil {
-		http.Error(w, "could not generate state", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not generate state")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -103,12 +103,12 @@ func (g *Google) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	redirectURI, ok := g.redirectURIFor(r)
 	if !ok {
-		http.Error(w, "host not allowed", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "host not allowed")
 		return
 	}
 	stateCookie, err := r.Cookie(stateCookieName)
 	if err != nil {
-		http.Error(w, "missing state cookie", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing state cookie")
 		return
 	}
 	// One-time use: clear it.
@@ -122,28 +122,28 @@ func (g *Google) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 	if r.URL.Query().Get("state") != stateCookie.Value {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "state mismatch")
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing code")
 		return
 	}
 	oauthCfg := g.oauthConfigFor(redirectURI)
 	tok, err := oauthCfg.Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, "token exchange failed", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_failure", "token exchange failed")
 		return
 	}
 	rawID, ok := tok.Extra("id_token").(string)
 	if !ok || rawID == "" {
-		http.Error(w, "no id_token in response", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_failure", "no id_token in response")
 		return
 	}
 	idTok, err := g.verifier.Verify(ctx, rawID)
 	if err != nil {
-		http.Error(w, "id_token verify failed", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_failure", "id_token verify failed")
 		return
 	}
 	var claims struct {
@@ -153,29 +153,29 @@ func (g *Google) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Picture string `json:"picture"`
 	}
 	if err := idTok.Claims(&claims); err != nil {
-		http.Error(w, "bad claims", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_failure", "bad claims")
 		return
 	}
 	if claims.Sub == "" || claims.Email == "" {
-		http.Error(w, "missing required claims", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "upstream_failure", "missing required claims")
 		return
 	}
 
 	user, err := g.users.UpsertByGoogle(ctx, claims.Sub, claims.Email, claims.Name, claims.Picture)
 	if err != nil {
-		http.Error(w, "could not upsert user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not upsert user")
 		return
 	}
 	sess, err := g.sessions.Create(ctx, user.ID, r.UserAgent())
 	if err != nil {
-		http.Error(w, "could not create session", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not create session")
 		return
 	}
 	SetSessionCookie(w, sess.ID, sess.ExpiresAt, g.cookieOpt)
 
 	memberships, err := g.orgs.ListForUser(ctx, user.ID)
 	if err != nil {
-		http.Error(w, "could not load memberships", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load memberships")
 		return
 	}
 	dest := g.cfg.WebBaseURL + "/app"
@@ -198,4 +198,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// apiErrorEnvelope mirrors the api package's error shape so /auth/* and
+// middleware responses use the same wire format as /api/*.
+type apiErrorEnvelope struct {
+	Error apiError `json:"error"`
+}
+
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, apiErrorEnvelope{Error: apiError{Code: code, Message: message}})
 }

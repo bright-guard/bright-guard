@@ -25,20 +25,6 @@ func orgIDFromURL(r *http.Request) (uuid.UUID, bool) {
 	return id, true
 }
 
-// errorResp shapes the JSON 422 body documented for not_registered etc.
-type errorResp struct {
-	Error errorBody `json:"error"`
-}
-
-type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func writeErr(w http.ResponseWriter, status int, code, msg string) {
-	writeJSON(w, status, errorResp{Error: errorBody{Code: code, Message: msg}})
-}
-
 // ── owner/admin-facing invitations ───────────────────────────────────────
 
 func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +32,7 @@ func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	items, err := s.Invitations.ListForOrg(r.Context(), orgID, status)
 	if err != nil {
-		http.Error(w, "list failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "list failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -62,12 +48,12 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	user := auth.UserFromContext(r.Context())
 	var req createInvitationReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	email := strings.TrimSpace(strings.ToLower(req.Email))
 	if email == "" || !strings.Contains(email, "@") {
-		http.Error(w, "valid email is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "valid email is required")
 		return
 	}
 	role := req.Role
@@ -77,7 +63,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	switch role {
 	case models.RoleOwner, models.RoleAdmin, models.RoleMember:
 	default:
-		http.Error(w, "invalid role", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid role")
 		return
 	}
 
@@ -85,30 +71,30 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	invitee, err := s.Users.ByEmail(r.Context(), email)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			writeErr(w, http.StatusUnprocessableEntity, "not_registered",
+			writeError(w, http.StatusUnprocessableEntity, "not_registered",
 				email+" isn't a Bright Guard user yet. Ask them to sign up at mcp-governance.infoblox.dev first.")
 			return
 		}
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 
 	// 422 if the user is already a member of this org.
 	if _, err := s.Orgs.RoleFor(r.Context(), invitee.ID, orgID); err == nil {
-		writeErr(w, http.StatusUnprocessableEntity, "already_member", email+" is already a member of this org.")
+		writeError(w, http.StatusUnprocessableEntity, "already_member", email+" is already a member of this org.")
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 
 	inv, err := s.Invitations.Create(r.Context(), orgID, user.ID, email, role)
 	if err != nil {
 		if errors.Is(err, store.ErrAlreadyExists) {
-			writeErr(w, http.StatusUnprocessableEntity, "already_invited", "An invitation is already pending for this email.")
+			writeError(w, http.StatusUnprocessableEntity, "already_invited", "An invitation is already pending for this email.")
 			return
 		}
-		http.Error(w, "create failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "create failed")
 		return
 	}
 
@@ -148,15 +134,15 @@ func (s *Server) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) 
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid invitation id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid invitation id")
 		return
 	}
 	if err := s.Invitations.Revoke(r.Context(), orgID, id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "revoke failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "revoke failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -168,7 +154,7 @@ func (s *Server) handleListMyInvitations(w http.ResponseWriter, r *http.Request)
 	user := auth.UserFromContext(r.Context())
 	items, err := s.Invitations.ListPendingForEmail(r.Context(), user.Email)
 	if err != nil {
-		http.Error(w, "list failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "list failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -178,34 +164,34 @@ func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 	user := auth.UserFromContext(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid invitation id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid invitation id")
 		return
 	}
 	inv, err := s.Invitations.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if !strings.EqualFold(inv.Email, user.Email) {
-		http.Error(w, "this invitation is addressed to a different email", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden", "this invitation is addressed to a different email")
 		return
 	}
 	if inv.Status != "pending" {
-		http.Error(w, "invitation is "+inv.Status, http.StatusConflict)
+		writeError(w, http.StatusConflict, "conflict", "invitation is "+inv.Status)
 		return
 	}
 	if err := s.Orgs.AddMember(r.Context(), inv.OrgID, user.ID, inv.Role); err != nil {
-		http.Error(w, "add member failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "add member failed")
 		return
 	}
 	if err := s.Invitations.MarkAccepted(r.Context(), inv.ID); err != nil {
 		// AddMember already succeeded; the inv state mismatch is the only realistic
 		// failure here and a 500 here is fine — the next attempt will be a no-op.
-		http.Error(w, "mark accepted failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "mark accepted failed")
 		return
 	}
 	// Switch the session's active org to the one they just joined.
@@ -224,28 +210,28 @@ func (s *Server) handleDeclineInvitation(w http.ResponseWriter, r *http.Request)
 	user := auth.UserFromContext(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid invitation id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid invitation id")
 		return
 	}
 	inv, err := s.Invitations.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if !strings.EqualFold(inv.Email, user.Email) {
-		http.Error(w, "this invitation is addressed to a different email", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden", "this invitation is addressed to a different email")
 		return
 	}
 	if inv.Status != "pending" {
-		http.Error(w, "invitation is "+inv.Status, http.StatusConflict)
+		writeError(w, http.StatusConflict, "conflict", "invitation is "+inv.Status)
 		return
 	}
 	if err := s.Invitations.MarkDeclined(r.Context(), inv.ID); err != nil {
-		http.Error(w, "mark declined failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "mark declined failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

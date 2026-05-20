@@ -16,7 +16,7 @@ func (s *Server) handleListExposures(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	counts, err := s.Discovery.CountExposuresByState(r.Context(), orgID)
 	if err != nil {
-		http.Error(w, "could not count exposures", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not count exposures")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"counts": counts})
@@ -27,26 +27,26 @@ func (s *Server) handleReclassifyExposure(w http.ResponseWriter, r *http.Request
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	addr, err := s.Discovery.GetServerAddress(r.Context(), orgID, id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	state, reason := exposure.Classify(addr)
 	if err := s.Discovery.SetExposure(r.Context(), id, state, reason); err != nil {
-		http.Error(w, "save failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "save failed")
 		return
 	}
 	det, err := s.Discovery.GetServerDetail(r.Context(), orgID, id)
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, det)

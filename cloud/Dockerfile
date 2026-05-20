@@ -6,7 +6,9 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
-# Production build base path is the root of the served domain.
+# Production build base path is the root of the served domain. Note: anything
+# placed in cloud/web/public/ (e.g. robots.txt) is copied verbatim into dist/
+# by Vite and ends up in the embedded SPA below.
 RUN npm run build
 
 # ── Stage 2: build the Go binary, embedding the SPA bundle ───────────────

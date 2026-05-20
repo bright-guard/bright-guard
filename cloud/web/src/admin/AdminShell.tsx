@@ -11,31 +11,33 @@ export default function AdminShell() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="border-b border-red-900/70 bg-red-950/40 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-3">
+    <div className="flex min-h-full flex-col bg-[var(--bg-app)]">
+      <header className="w-full bg-[var(--bg-topbar)] text-[var(--text-on-dark)]">
+        <div className="flex w-full items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <div className="h-7 w-7 rounded-md bg-gradient-to-br from-red-400 to-red-700" />
-            <div className="font-semibold tracking-tight">
-              Bright Guard
-              <span className="ml-1 text-red-400"> · Admin</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[15px] font-bold tracking-tight text-white">
+                Bright Guard
+              </span>
+              <span className="text-red-400">· Admin</span>
+              <span className="rounded-sm border border-red-700/70 bg-red-950/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300">
+                Platform
+              </span>
             </div>
-            <span className="rounded-sm border border-red-700/60 bg-red-950 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300">
-              Platform
-            </span>
           </div>
 
           <div className="flex items-center gap-3">
             <Link
               to="/app"
-              className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-white"
+              className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80 hover:border-white/30 hover:text-white"
             >
               Tenant console
             </Link>
             <div className="relative">
               <button
                 onClick={() => setUserMenuOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-full border border-red-900 bg-red-950/60 py-1 pl-1 pr-3 text-sm hover:border-red-700"
+                className="flex items-center gap-2 rounded-full border border-red-900/70 bg-red-950/40 py-1 pl-1 pr-3 text-[13px] text-white hover:border-red-700"
               >
                 {user?.avatarUrl ? (
                   <img
@@ -48,16 +50,16 @@ export default function AdminShell() {
                     {user?.email.slice(0, 1).toUpperCase()}
                   </span>
                 )}
-                <span className="text-slate-200">{user?.email}</span>
+                <span>{user?.email}</span>
               </button>
               {userMenuOpen && (
-                <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-md border border-slate-700 bg-slate-900 shadow-xl">
+                <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-md border border-slate-200 bg-white text-slate-800 shadow-xl">
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);
                       logout();
                     }}
-                    className="block w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                    className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100"
                   >
                     Sign out
                   </button>
@@ -66,11 +68,14 @@ export default function AdminShell() {
             </div>
           </div>
         </div>
+        {/* Admin: solid red stripe instead of the CSP brand gradient — keeps
+            the "danger zone" branding while sharing the CSP top-bar shape. */}
+        <div className="h-[3px] w-full bg-red-600" />
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1400px] flex-1 gap-6 px-4 py-6">
-        <aside className="w-52 shrink-0">
-          <nav className="flex flex-col gap-1 text-sm">
+      <div className="flex w-full flex-1">
+        <aside className="w-[220px] shrink-0 bg-[var(--bg-rail)] text-[var(--text-on-dark-muted)]">
+          <nav className="flex flex-col gap-0.5 px-2 py-4 text-[14px]">
             <SideLink to="/admin" end>Overview</SideLink>
             <SideLink to="/admin/users">Users</SideLink>
             <SideLink to="/admin/orgs">Orgs</SideLink>
@@ -78,7 +83,7 @@ export default function AdminShell() {
             <SideLink to="/admin/audit">Audit</SideLink>
           </nav>
         </aside>
-        <main className="flex-1 min-w-0">
+        <main className="min-w-0 flex-1 px-8 py-6 text-slate-900">
           <Outlet />
         </main>
       </div>
@@ -100,10 +105,10 @@ function SideLink({
       to={to}
       end={end}
       className={({ isActive }) =>
-        `rounded-md px-3 py-2 transition ${
+        `rounded-md px-3 py-1.5 text-[14px] transition ${
           isActive
-            ? "bg-red-900/40 text-red-200 ring-1 ring-red-800"
-            : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            ? "bg-red-900/30 text-red-200 shadow-[inset_3px_0_0_theme(colors.red.500)]"
+            : "text-[var(--text-on-dark-muted)] hover:bg-white/5 hover:text-white"
         }`
       }
     >

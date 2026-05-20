@@ -31,7 +31,7 @@ func (s *Server) handlePlatformOverview(w http.ResponseWriter, r *http.Request) 
 	o, err := s.Platform.Overview(r.Context())
 	if err != nil {
 		log.Printf("platform overview: %v", err)
-		http.Error(w, "could not load overview", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load overview")
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
@@ -60,7 +60,7 @@ func (s *Server) handlePlatformActivity(w http.ResponseWriter, r *http.Request) 
 	rows, next, err := s.Activity.ActivityCrossOrg(r.Context(), f)
 	if err != nil {
 		log.Printf("platform activity: %v", err)
-		http.Error(w, "could not list activity", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list activity")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -80,7 +80,7 @@ func (s *Server) handlePlatformListUsers(w http.ResponseWriter, r *http.Request)
 	users, next, err := s.Platform.ListUsers(r.Context(), q.Get("q"), limit, q.Get("cursor"))
 	if err != nil {
 		log.Printf("platform list users: %v", err)
-		http.Error(w, "could not list users", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list users")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -97,11 +97,11 @@ func (s *Server) handlePlatformGetUser(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Platform.UserDetail(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("platform get user: %v", err)
-		http.Error(w, "could not load user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load user")
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
@@ -114,16 +114,16 @@ func (s *Server) handlePlatformSuspendUser(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if actor.ID == id {
-		http.Error(w, "cannot suspend yourself", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "cannot suspend yourself")
 		return
 	}
 	if err := s.Platform.SuspendUser(r.Context(), id, actor.ID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("suspend user: %v", err)
-		http.Error(w, "could not suspend user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not suspend user")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionUserSuspend, "user", id, nil); err != nil {
@@ -140,11 +140,11 @@ func (s *Server) handlePlatformUnsuspendUser(w http.ResponseWriter, r *http.Requ
 	}
 	if err := s.Platform.UnsuspendUser(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("unsuspend user: %v", err)
-		http.Error(w, "could not unsuspend user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not unsuspend user")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionUserUnsuspend, "user", id, nil); err != nil {
@@ -159,14 +159,15 @@ type confirmReq struct {
 
 // checkConfirm reads {"confirm": "<phrase>"} from the body and compares against
 // expected (case-insensitive, trimmed). Writes 400 + returns false on mismatch.
+// The mismatch error echoes the expected phrase so the SPA can surface it.
 func checkConfirm(w http.ResponseWriter, r *http.Request, expected string) bool {
 	var c confirmReq
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return false
 	}
 	if strings.TrimSpace(strings.ToLower(c.Confirm)) != strings.ToLower(expected) {
-		http.Error(w, "confirmation phrase mismatch; expected: "+expected, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "confirmation phrase mismatch; expected: "+expected)
 		return false
 	}
 	return true
@@ -179,17 +180,17 @@ func (s *Server) handlePlatformDeleteUser(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if actor.ID == id {
-		http.Error(w, "cannot delete yourself", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "cannot delete yourself")
 		return
 	}
 	email, err := s.Platform.UserEmail(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("delete user lookup: %v", err)
-		http.Error(w, "could not load user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load user")
 		return
 	}
 	if !checkConfirm(w, r, "delete user "+email) {
@@ -197,11 +198,11 @@ func (s *Server) handlePlatformDeleteUser(w http.ResponseWriter, r *http.Request
 	}
 	if _, err := s.Platform.DeleteUser(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("delete user: %v", err)
-		http.Error(w, "could not delete user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not delete user")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionUserDelete, "user", id, map[string]any{"email": email}); err != nil {
@@ -220,16 +221,16 @@ func (s *Server) handlePlatformPromote(w http.ResponseWriter, r *http.Request) {
 	email, err := s.Platform.UserEmail(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return
 		}
 		log.Printf("promote lookup: %v", err)
-		http.Error(w, "could not load user", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load user")
 		return
 	}
 	if err := s.Platform.Promote(r.Context(), id, actor.ID); err != nil {
 		log.Printf("promote: %v", err)
-		http.Error(w, "could not promote", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not promote")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionUserPromote, "platform_admin", id, map[string]any{"email": email}); err != nil {
@@ -250,17 +251,17 @@ func (s *Server) handlePlatformDemote(w http.ResponseWriter, r *http.Request) {
 		n, err := s.Platform.CountActiveAdmins(r.Context())
 		if err != nil {
 			log.Printf("count active admins: %v", err)
-			http.Error(w, "could not check admin count", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal", "could not check admin count")
 			return
 		}
 		if !canDemoteSelf(n) {
-			http.Error(w, "cannot demote the last active platform admin", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid_request", "cannot demote the last active platform admin")
 			return
 		}
 	}
 	if err := s.Platform.Demote(r.Context(), id); err != nil {
 		log.Printf("demote: %v", err)
-		http.Error(w, "could not demote", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not demote")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionUserDemote, "platform_admin", id, nil); err != nil {
@@ -280,7 +281,7 @@ func (s *Server) handlePlatformListOrgs(w http.ResponseWriter, r *http.Request) 
 	orgs, next, err := s.Platform.ListOrgs(r.Context(), q.Get("q"), limit, q.Get("cursor"))
 	if err != nil {
 		log.Printf("platform list orgs: %v", err)
-		http.Error(w, "could not list orgs", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list orgs")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -297,11 +298,11 @@ func (s *Server) handlePlatformGetOrg(w http.ResponseWriter, r *http.Request) {
 	o, err := s.Platform.OrgDetail(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "org not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "org not found")
 			return
 		}
 		log.Printf("platform get org: %v", err)
-		http.Error(w, "could not load org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load org")
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
@@ -315,11 +316,11 @@ func (s *Server) handlePlatformSuspendOrg(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.Platform.SuspendOrg(r.Context(), id, actor.ID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "org not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "org not found")
 			return
 		}
 		log.Printf("suspend org: %v", err)
-		http.Error(w, "could not suspend org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not suspend org")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionOrgSuspend, "org", id, nil); err != nil {
@@ -337,11 +338,11 @@ func (s *Server) handlePlatformDeleteOrg(w http.ResponseWriter, r *http.Request)
 	slug, err := s.Platform.OrgSlug(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "org not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "org not found")
 			return
 		}
 		log.Printf("delete org lookup: %v", err)
-		http.Error(w, "could not load org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not load org")
 		return
 	}
 	if !checkConfirm(w, r, "delete org "+slug) {
@@ -349,11 +350,11 @@ func (s *Server) handlePlatformDeleteOrg(w http.ResponseWriter, r *http.Request)
 	}
 	if _, err := s.Platform.DeleteOrg(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "org not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "org not found")
 			return
 		}
 		log.Printf("delete org: %v", err)
-		http.Error(w, "could not delete org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not delete org")
 		return
 	}
 	if err := s.Platform.Audit(r.Context(), actor.ID, actionOrgDelete, "org", id, map[string]any{"slug": slug}); err != nil {
@@ -366,7 +367,7 @@ func (s *Server) handlePlatformListAdmins(w http.ResponseWriter, r *http.Request
 	admins, err := s.Platform.ListAdmins(r.Context())
 	if err != nil {
 		log.Printf("list admins: %v", err)
-		http.Error(w, "could not list admins", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list admins")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": admins})
@@ -383,7 +384,7 @@ func (s *Server) handlePlatformAudit(w http.ResponseWriter, r *http.Request) {
 	entries, next, err := s.Platform.ListAudit(r.Context(), limit, q.Get("cursor"))
 	if err != nil {
 		log.Printf("list audit: %v", err)
-		http.Error(w, "could not list audit", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list audit")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -396,7 +397,7 @@ func (s *Server) handlePlatformAudit(w http.ResponseWriter, r *http.Request) {
 func parseUUIDParam(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, name))
 	if err != nil {
-		http.Error(w, "invalid "+name, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid "+name)
 		return uuid.Nil, false
 	}
 	return id, true

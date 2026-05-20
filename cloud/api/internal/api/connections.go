@@ -74,7 +74,7 @@ func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	out, err := s.Connections.List(r.Context(), orgID)
 	if err != nil {
-		http.Error(w, "could not list connections", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list connections")
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -85,32 +85,32 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	user := auth.UserFromContext(r.Context())
 	var req createConnectionReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	endpoint := strings.TrimSpace(req.EndpointURL)
 	transport := strings.TrimSpace(req.Transport)
 	if name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
 	if endpoint == "" {
-		http.Error(w, "endpointUrl is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "endpointUrl is required")
 		return
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		http.Error(w, "endpointUrl must be an absolute http(s) URL", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "endpointUrl must be an absolute http(s) URL")
 		return
 	}
 	if !validTransport(transport) {
-		http.Error(w, "invalid transport", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid transport")
 		return
 	}
 	method, ok := validAuthMethod(req.AuthMethod)
 	if !ok {
-		http.Error(w, "invalid authMethod", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid authMethod")
 		return
 	}
 
@@ -126,11 +126,11 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	oauthStatus := ""
 	if method == models.AuthMethodOAuth2Authcode {
 		if req.OAuthConfig == nil {
-			http.Error(w, "oauthConfig is required for oauth2_authcode", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid_request", "oauthConfig is required for oauth2_authcode")
 			return
 		}
 		if err := validateOAuthConfig(req.OAuthConfig); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
 		secret.ClientID = strings.TrimSpace(req.OAuthConfig.ClientID)
@@ -143,7 +143,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		oauthStatus = models.OAuthStatusPendingAuthorize
 	} else {
 		if err := validateSecret(method, secret); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
 	}
@@ -159,7 +159,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		OAuthStatus: oauthStatus,
 	})
 	if err != nil {
-		http.Error(w, "could not create connection", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not create connection")
 		return
 	}
 
@@ -220,16 +220,16 @@ func (s *Server) handleGetConnection(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	conn, err := s.Connections.Get(r.Context(), orgID, id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, conn)
@@ -239,15 +239,15 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	if err := s.Connections.Delete(r.Context(), orgID, id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "delete failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "delete failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -257,20 +257,20 @@ func (s *Server) handleDiscoverConnection(w http.ResponseWriter, r *http.Request
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	conn, err := s.Connections.Get(r.Context(), orgID, id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if s.Scheduler == nil {
-		http.Error(w, "scheduler not configured", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "scheduler_unconfigured", "scheduler not configured")
 		return
 	}
 	// Skip discovery for OAuth connections that haven't completed the dance —
@@ -284,7 +284,7 @@ func (s *Server) handleDiscoverConnection(w http.ResponseWriter, r *http.Request
 	_ = s.Scheduler.Discover(dctx, conn.ID)
 	reloaded, err := s.Connections.Get(r.Context(), orgID, conn.ID)
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, reloaded)
@@ -303,39 +303,39 @@ func (s *Server) handleStartOAuthAuthorize(w http.ResponseWriter, r *http.Reques
 	user := auth.UserFromContext(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	conn, secret, err := s.Connections.GetWithSecret(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if conn.OrgID != orgID {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if conn.AuthMethod != models.AuthMethodOAuth2Authcode {
-		http.Error(w, "connection is not oauth2_authcode", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "connection is not oauth2_authcode")
 		return
 	}
 	if secret.AuthorizeURL == "" || secret.TokenURL == "" || secret.ClientID == "" {
-		http.Error(w, "oauth config incomplete", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "oauth config incomplete")
 		return
 	}
 
 	state, err := randomBase64URL(32)
 	if err != nil {
-		http.Error(w, "rng failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "rng failed")
 		return
 	}
 	verifier, err := randomBase64URL(32)
 	if err != nil {
-		http.Error(w, "rng failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "rng failed")
 		return
 	}
 	challenge := pkceChallenge(verifier)
@@ -354,13 +354,13 @@ func (s *Server) handleStartOAuthAuthorize(w http.ResponseWriter, r *http.Reques
 		ReturnTo:     returnTo,
 		ExpiresAt:    time.Now().Add(oauthStateTTL),
 	}); err != nil {
-		http.Error(w, "could not start authorize", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not start authorize")
 		return
 	}
 
 	authorizeURL, err := buildAuthorizeURL(secret, state, challenge)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, authorizeResp{AuthorizeURL: authorizeURL})
@@ -404,17 +404,17 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	provError := q.Get("error")
 
 	if state == "" {
-		http.Error(w, "missing state", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "missing state")
 		return
 	}
 
 	st, err := s.Connections.TakeOAuthState(r.Context(), state)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "unknown or expired state", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "unknown or expired state")
 		return
 	}
 	if err != nil {
-		http.Error(w, "state lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "state lookup failed")
 		return
 	}
 	if time.Now().After(st.ExpiresAt) {
@@ -434,11 +434,11 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	conn, secret, err := s.Connections.GetWithSecret(r.Context(), st.ConnectionID)
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if conn.OrgID != st.OrgID {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "state mismatch")
 		return
 	}
 
@@ -451,11 +451,11 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	updated.Method = string(models.AuthMethodOAuth2Authcode)
 	if err := s.Connections.UpdateAuthState(r.Context(), conn.ID, updated); err != nil {
-		http.Error(w, "persist failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "persist failed")
 		return
 	}
 	if err := s.Connections.UpdateOAuthStatus(r.Context(), conn.ID, models.OAuthStatusAuthorized); err != nil {
-		http.Error(w, "persist failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "persist failed")
 		return
 	}
 
@@ -512,7 +512,7 @@ func (s *Server) redirectCallback(w http.ResponseWriter, r *http.Request, return
 	}
 	u, err := url.Parse(base + target)
 	if err != nil {
-		http.Error(w, "bad return_to", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "bad return_to")
 		return
 	}
 	q := u.Query()

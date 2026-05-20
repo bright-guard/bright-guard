@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSP look-and-feel spike: palette + typography tokens.
+   Mirrors the Infoblox CSP root UI for visual parity only — not a full
+   design-system migration. See cloud/web/docs/csp-integration.md. */
+:root {
+  --bg-app: #f4f5f7;
+  --bg-rail: #1a2533;
+  --bg-topbar: #101820;
+  --text-on-dark: #ffffff;
+  --text-on-dark-muted: #94a3b8;
+  --accent: #0091e1;
+  --accent-soft: #cfe9f8;
+  --csp-stripe-1: #ffc107;
+  --csp-stripe-2: #4caf50;
+  --csp-stripe-3: #00bcd4;
+}
+
 @layer base {
   html,
   body,
@@ -9,11 +25,9 @@
     height: 100%;
   }
   body {
-    background: radial-gradient(
-        ellipse at top,
-        rgba(8, 51, 68, 0.35),
-        transparent 60%
-      ),
-      #020617;
+    font-family: "Lato", system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-app);
+    color: #212121;
   }
 }

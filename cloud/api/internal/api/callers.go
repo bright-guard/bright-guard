@@ -67,12 +67,12 @@ func (s *Server) handleListCallers(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	f, err := s.parseCallerFilter(r)
 	if err != nil {
-		http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid query: "+err.Error())
 		return
 	}
 	items, next, totals, err := s.Callers.List(r.Context(), orgID, f)
 	if err != nil {
-		http.Error(w, "list failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "list failed")
 		return
 	}
 	resp := callerListResp{Items: items, Totals: totals}
@@ -86,16 +86,16 @@ func (s *Server) handleGetCaller(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	det, err := s.Callers.Get(r.Context(), orgID, id)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, det)
@@ -105,15 +105,15 @@ func (s *Server) handleAcknowledgeCaller(w http.ResponseWriter, r *http.Request)
 	orgID := orgFromCtx(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid id")
 		return
 	}
 	if err := s.Callers.Acknowledge(r.Context(), orgID, id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "acknowledge failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "acknowledge failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

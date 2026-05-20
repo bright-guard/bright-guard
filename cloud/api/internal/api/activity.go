@@ -104,12 +104,12 @@ func (s *Server) handleListActivity(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	f, err := s.parseActivityFilter(r)
 	if err != nil {
-		http.Error(w, "invalid query: "+err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid query: "+err.Error())
 		return
 	}
 	items, next, totals, err := s.Activity.List(r.Context(), orgID, f)
 	if err != nil {
-		http.Error(w, "list failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "list failed")
 		return
 	}
 	resp := activityListResp{Items: items, Totals: totals}
@@ -125,20 +125,20 @@ func (s *Server) handleActivitySummary(w http.ResponseWriter, r *http.Request) {
 	from := now.Add(-defaultActivityWindow)
 	to := now
 	if t, _, err := parseTimeOr(r.URL.Query().Get("from"), from); err != nil {
-		http.Error(w, "invalid from", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid from")
 		return
 	} else {
 		from = t
 	}
 	if t, _, err := parseTimeOr(r.URL.Query().Get("to"), to); err != nil {
-		http.Error(w, "invalid to", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid to")
 		return
 	} else {
 		to = t
 	}
 	sum, err := s.Activity.Summary(r.Context(), orgID, from, to)
 	if err != nil {
-		http.Error(w, "summary failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "summary failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)

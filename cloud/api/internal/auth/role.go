@@ -32,21 +32,21 @@ func RequireOrgRole(lookup RoleLookup, orgIDFromReq func(r *http.Request) (uuid.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
 			if user == nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 				return
 			}
 			orgID, ok := orgIDFromReq(r)
 			if !ok {
-				http.Error(w, "invalid orgId", http.StatusBadRequest)
+				writeError(w, http.StatusBadRequest, "invalid_org_id", "invalid orgId")
 				return
 			}
 			role, err := lookup.RoleFor(r.Context(), user.ID, orgID)
 			if err != nil {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				writeError(w, http.StatusForbidden, "forbidden", "forbidden")
 				return
 			}
 			if _, ok := allowSet[role]; !ok {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				writeError(w, http.StatusForbidden, "forbidden", "forbidden")
 				return
 			}
 			ctx := context.WithValue(r.Context(), ctxKeyOrgRole, role)

@@ -42,6 +42,9 @@ type Server struct {
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
+	// Security headers run first so they're applied to every response, including
+	// CORS preflights, the SPA, and error responses produced higher in the chain.
+	r.Use(securityHeadersMiddleware)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
@@ -65,7 +68,8 @@ func (s *Server) Router() http.Handler {
 	} else {
 		// Friendly error so the SPA's "Continue with Google" doesn't 404 on dev.
 		r.Get("/auth/google/start", func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.", http.StatusServiceUnavailable)
+			writeError(w, http.StatusServiceUnavailable, "google_oauth_unconfigured",
+				"Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.")
 		})
 	}
 
@@ -222,7 +226,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess := auth.SessionFromContext(r.Context())
 	memberships, err := s.Orgs.ListForUser(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "could not list memberships", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list memberships")
 		return
 	}
 	if memberships == nil {
@@ -255,20 +259,20 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	sess := auth.SessionFromContext(r.Context())
 	var req createOrgReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "name is required")
 		return
 	}
 	org, err := s.Orgs.Create(r.Context(), strings.TrimSpace(req.Name), user.ID)
 	if err != nil {
-		http.Error(w, "could not create org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not create org")
 		return
 	}
 	if err := s.Sessions.SetActiveOrg(r.Context(), sess.ID, org.ID); err != nil {
-		http.Error(w, "could not set active org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not set active org")
 		return
 	}
 	writeJSON(w, http.StatusOK, org)
@@ -278,7 +282,7 @@ func (s *Server) handleListOrgs(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	memberships, err := s.Orgs.ListForUser(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "could not list orgs", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not list orgs")
 		return
 	}
 	writeJSON(w, http.StatusOK, memberships)
@@ -293,25 +297,25 @@ func (s *Server) handleSetActiveOrg(w http.ResponseWriter, r *http.Request) {
 	sess := auth.SessionFromContext(r.Context())
 	var req setActiveOrgReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	orgID, err := uuid.Parse(req.OrgID)
 	if err != nil {
-		http.Error(w, "invalid orgId", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_org_id", "invalid orgId")
 		return
 	}
 	ok, err := s.Orgs.UserHasMembership(r.Context(), user.ID, orgID)
 	if err != nil {
-		http.Error(w, "membership check failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "membership check failed")
 		return
 	}
 	if !ok {
-		http.Error(w, "not a member", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden", "not a member")
 		return
 	}
 	if err := s.Sessions.SetActiveOrg(r.Context(), sess.ID, orgID); err != nil {
-		http.Error(w, "could not set active org", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not set active org")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -321,4 +325,49 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// apiError is the inner shape returned on any non-2xx; apiErrorEnvelope wraps
+// it so the wire format is always {"error":{"code":..., "message":...}}.
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type apiErrorEnvelope struct {
+	Error apiError `json:"error"`
+}
+
+// writeError is the single chokepoint for non-2xx responses. Pick a stable,
+// machine-readable code; the message is free-form and human-facing. Do not
+// include secret material (token fragments, DB connection strings, etc.).
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(apiErrorEnvelope{Error: apiError{Code: code, Message: message}})
+}
+
+// securityHeadersMiddleware sets a conservative baseline of HTTP security
+// headers on every response. CSP allows Google Fonts (used by the SPA) and
+// data: image URIs (favicons / inline SVG); everything else is same-origin.
+// If the SPA ever needs to fetch from an additional origin, extend the
+// relevant directive here rather than per-route.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"img-src 'self' data: https:; "+
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+				"font-src 'self' https://fonts.gstatic.com; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'; "+
+				"form-action 'self'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }

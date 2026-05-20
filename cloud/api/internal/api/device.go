@@ -76,7 +76,7 @@ func (s *Server) handleDeviceInitiate(w http.ResponseWriter, r *http.Request) {
 
 	secret, err := randBase64(32)
 	if err != nil {
-		http.Error(w, "rand failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "rand failed")
 		return
 	}
 	deviceCode := "bg_dev_" + secret
@@ -85,7 +85,7 @@ func (s *Server) handleDeviceInitiate(w http.ResponseWriter, r *http.Request) {
 	for i := 0; i < 5; i++ {
 		userCode, err = randUserCode()
 		if err != nil {
-			http.Error(w, "rand failed", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal", "rand failed")
 			return
 		}
 		_, err = s.DeviceAuth.Create(r.Context(), deviceCode, userCode, label, deviceCodeTTL)
@@ -95,7 +95,7 @@ func (s *Server) handleDeviceInitiate(w http.ResponseWriter, r *http.Request) {
 		userCode = ""
 	}
 	if userCode == "" {
-		http.Error(w, "could not create device authorization", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "could not create device authorization")
 		return
 	}
 
@@ -123,47 +123,47 @@ type pollResp struct {
 func (s *Server) handleDevicePoll(w http.ResponseWriter, r *http.Request) {
 	var req pollReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	if strings.TrimSpace(req.DeviceCode) == "" {
-		http.Error(w, "deviceCode required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "deviceCode required")
 		return
 	}
 	rec, err := s.DeviceAuth.GetByDeviceCode(r.Context(), req.DeviceCode)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusGone, map[string]string{"error": "expired"})
+		writeError(w, http.StatusGone, "expired", "device code expired")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if time.Now().After(rec.ExpiresAt) && rec.Status == "pending" {
-		writeJSON(w, http.StatusGone, map[string]string{"error": "expired"})
+		writeError(w, http.StatusGone, "expired", "device code expired")
 		return
 	}
 	switch rec.Status {
 	case "pending":
-		writeJSON(w, http.StatusPreconditionRequired, map[string]string{"error": "authorization_pending"})
+		writeError(w, http.StatusPreconditionRequired, "authorization_pending", "authorization pending")
 	case "denied":
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "denied"})
+		writeError(w, http.StatusForbidden, "denied", "device authorization denied")
 	case "approved":
 		// Consume: read & clear the bearer plaintext, then delete the row so
 		// the token can only be returned once.
 		bearer, sessionID, ok, err := s.DeviceAuth.ConsumeApproved(r.Context(), rec.ID)
 		if err != nil {
-			http.Error(w, "consume failed", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal", "consume failed")
 			return
 		}
 		if !ok {
 			// Already consumed.
-			writeJSON(w, http.StatusGone, map[string]string{"error": "expired"})
+			writeError(w, http.StatusGone, "expired", "device code expired")
 			return
 		}
 		sess, err := s.Sessions.Get(r.Context(), sessionID)
 		if err != nil {
-			http.Error(w, "session lookup failed", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal", "session lookup failed")
 			return
 		}
 		writeJSON(w, http.StatusOK, pollResp{
@@ -172,7 +172,7 @@ func (s *Server) handleDevicePoll(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt:   sess.ExpiresAt,
 		})
 	default:
-		writeJSON(w, http.StatusGone, map[string]string{"error": "expired"})
+		writeError(w, http.StatusGone, "expired", "device code expired")
 	}
 }
 
@@ -195,16 +195,16 @@ func normalizeUserCode(s string) string {
 func (s *Server) handleDeviceLookup(w http.ResponseWriter, r *http.Request) {
 	code := normalizeUserCode(r.URL.Query().Get("code"))
 	if code == "" {
-		http.Error(w, "code required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "code required")
 		return
 	}
 	rec, err := s.DeviceAuth.GetByUserCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, lookupResp{
@@ -221,45 +221,45 @@ type approveReq struct {
 func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		return
 	}
 	var req approveReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	code := normalizeUserCode(req.UserCode)
 	if code == "" {
-		http.Error(w, "userCode required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "userCode required")
 		return
 	}
 	rec, err := s.DeviceAuth.GetByUserCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if rec.Status != "pending" {
-		http.Error(w, "already resolved", http.StatusConflict)
+		writeError(w, http.StatusConflict, "conflict", "already resolved")
 		return
 	}
 	if time.Now().After(rec.ExpiresAt) {
-		http.Error(w, "expired", http.StatusGone)
+		writeError(w, http.StatusGone, "expired", "device code expired")
 		return
 	}
 
 	secret, err := randBase64(32)
 	if err != nil {
-		http.Error(w, "rand failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "rand failed")
 		return
 	}
 	sess, err := s.Sessions.CreateCLI(r.Context(), user.ID, rec.ClientLabel, secret, cliSessionTTL)
 	if err != nil {
-		http.Error(w, "session create failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "session create failed")
 		return
 	}
 	bearer := auth.BearerPrefix + sess.ID.String() + "." + secret
@@ -267,10 +267,10 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 		// Roll the orphan session back.
 		_ = s.Sessions.Delete(r.Context(), sess.ID)
 		if errors.Is(err, store.ErrAlreadyResolved) {
-			http.Error(w, "already resolved", http.StatusConflict)
+			writeError(w, http.StatusConflict, "conflict", "already resolved")
 			return
 		}
-		http.Error(w, "approve failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "approve failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -279,34 +279,34 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeviceDeny(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		return
 	}
 	var req approveReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
 		return
 	}
 	code := normalizeUserCode(req.UserCode)
 	if code == "" {
-		http.Error(w, "userCode required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "userCode required")
 		return
 	}
 	rec, err := s.DeviceAuth.GetByUserCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "lookup failed")
 		return
 	}
 	if err := s.DeviceAuth.Deny(r.Context(), rec.ID, user.ID); err != nil {
 		if errors.Is(err, store.ErrAlreadyResolved) {
-			http.Error(w, "already resolved", http.StatusConflict)
+			writeError(w, http.StatusConflict, "conflict", "already resolved")
 			return
 		}
-		http.Error(w, "deny failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "deny failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -318,7 +318,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	sessions, err := s.Sessions.ListForUser(r.Context(), user.ID)
 	if err != nil {
-		http.Error(w, "list failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "list failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, sessions)
@@ -329,19 +329,19 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	current := auth.SessionFromContext(r.Context())
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid session id")
 		return
 	}
 	if current != nil && current.ID == id {
-		http.Error(w, "cannot revoke the current session", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid_request", "cannot revoke the current session")
 		return
 	}
 	if err := s.Sessions.DeleteForUser(r.Context(), user.ID, id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
-		http.Error(w, "revoke failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "revoke failed")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
