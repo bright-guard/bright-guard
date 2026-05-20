@@ -13,3 +13,4 @@ cloud/api/bin/
 cloud/api/tmp/
 cloud/shim/shim
 cloud/cli/seed/seed
+.claude/
