@@ -8,13 +8,13 @@ import { relativeTime } from "../lib/time";
 function statusClasses(status: string): string {
   switch (status) {
     case "ok":
-      return "bg-emerald-900/50 text-emerald-300";
+      return "bg-[#006128]/10 text-[#006128]";
     case "error":
-      return "bg-rose-900/50 text-rose-300";
+      return "bg-[#b71c1c]/10 text-[#b71c1c]";
     case "denied":
-      return "bg-amber-900/50 text-amber-300";
+      return "bg-[#a97f13]/10 text-[#a97f13]";
     default:
-      return "bg-slate-800 text-slate-300";
+      return "bg-slate-100 text-slate-600";
   }
 }
 
@@ -60,11 +60,11 @@ export default function CallerDetailPage() {
   }
 
   if (loading && !data) {
-    return <div className="text-sm text-slate-400">Loading…</div>;
+    return <div className="text-sm text-slate-500">Loading…</div>;
   }
   if (error) {
     return (
-      <div className="rounded-md border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">
+      <div className="rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
         {error}
       </div>
     );
@@ -75,13 +75,13 @@ export default function CallerDetailPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to="/app/callers" className="text-xs text-slate-400 hover:text-slate-200">
+          <Link to="/app/callers" className="text-xs text-slate-500 hover:text-slate-900">
             ← Callers
           </Link>
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
             {data.label || "(anonymous)"}
             {data.flaggedNew && (
-              <span className="rounded-full bg-amber-900/50 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-200">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-800">
                 new
               </span>
             )}
@@ -97,7 +97,7 @@ export default function CallerDetailPage() {
           <button
             onClick={acknowledge}
             disabled={ackPending}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 hover:border-slate-600 disabled:opacity-50"
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 hover:border-slate-600 disabled:opacity-50"
           >
             {ackPending ? "Acknowledging…" : "Acknowledge as known"}
           </button>
@@ -111,27 +111,27 @@ export default function CallerDetailPage() {
       </div>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Caller payload
         </h2>
-        <pre className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-300">
+        <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
 {JSON.stringify(data.caller ?? {}, null, 2)}
         </pre>
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Top MCP servers
         </h2>
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Server</th>
                 <th className="px-4 py-3 text-right">Invocations</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-200">
               {data.topServers.length === 0 && (
                 <tr>
                   <td colSpan={2} className="px-4 py-6 text-center text-slate-500">
@@ -140,16 +140,16 @@ export default function CallerDetailPage() {
                 </tr>
               )}
               {data.topServers.map((s) => (
-                <tr key={s.mcpServerId} className="hover:bg-slate-900/40">
+                <tr key={s.mcpServerId} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <Link
                       to={`/app/mcp-servers/${s.mcpServerId}`}
-                      className="text-brand-300 hover:underline"
+                      className="text-brand-600 hover:underline"
                     >
                       {s.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-200">
+                  <td className="px-4 py-3 text-right text-slate-900">
                     {s.count.toLocaleString()}
                   </td>
                 </tr>
@@ -160,12 +160,12 @@ export default function CallerDetailPage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Recent invocations
         </h2>
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">When</th>
                 <th className="px-4 py-3">Capability</th>
@@ -173,7 +173,7 @@ export default function CallerDetailPage() {
                 <th className="px-4 py-3">Latency</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-200">
               {data.recentInvocations.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
@@ -182,11 +182,11 @@ export default function CallerDetailPage() {
                 </tr>
               )}
               {data.recentInvocations.map((inv) => (
-                <tr key={inv.id} className="hover:bg-slate-900/40">
-                  <td className="px-4 py-3 text-slate-400" title={inv.at}>
+                <tr key={inv.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 text-slate-500" title={inv.at}>
                     {relativeTime(inv.at)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-slate-200">
+                  <td className="px-4 py-3 font-mono text-slate-900">
                     <span className="text-slate-500">{inv.capabilityKind}:</span>
                     {inv.capabilityName}
                   </td>
@@ -197,7 +197,7 @@ export default function CallerDetailPage() {
                       {inv.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{inv.latencyMs}ms</td>
+                  <td className="px-4 py-3 text-slate-500">{inv.latencyMs}ms</td>
                 </tr>
               ))}
             </tbody>
@@ -210,9 +210,9 @@ export default function CallerDetailPage() {
 
 function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3" title={title}>
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3" title={title}>
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-slate-100">{value}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/models"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/policy"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/scheduler"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/spa"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/store"
@@ -33,7 +34,10 @@ type Server struct {
 	Invitations *store.Invitations
 	Email       email.Sender
 	Platform    *store.Platform
+	Policies    *store.Policies
 	Scheduler   *scheduler.Scheduler
+	PolicySweep *scheduler.PolicySweeper
+	PolicyEngine *policy.Engine
 	Google      *auth.Google // may be nil if not configured
 	Dev         *auth.DevLogin
 	Cookie      auth.CookieOpts
@@ -132,6 +136,13 @@ func (s *Server) Router() http.Handler {
 			r.Get("/callers", s.handleListCallers)
 			r.Get("/callers/{id}", s.handleGetCaller)
 			r.Post("/callers/{id}/acknowledge", s.handleAcknowledgeCaller)
+
+			r.Get("/policies", s.handleListPolicies)
+			r.Post("/policies", s.handleCreatePolicy)
+			r.Get("/policies/{id}", s.handleGetPolicy)
+			r.Patch("/policies/{id}", s.handleUpdatePolicy)
+			r.Delete("/policies/{id}", s.handleDeletePolicy)
+			r.Post("/policies/{id}/simulate", s.handleSimulatePolicy)
 
 			// Org membership & invitations. Read endpoints are open to any
 			// member; the write endpoints below require owner/admin.

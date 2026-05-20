@@ -74,33 +74,33 @@ export default function InvitationPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-16">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900/70 p-8 shadow-2xl">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
         <h1 className="mb-1 text-2xl font-semibold">Organization invitation</h1>
         {loading && (
-          <p className="text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-slate-500">Loading…</p>
         )}
         {!loading && invite && (
           <>
-            <p className="mb-6 text-sm text-slate-400">
-              <span className="text-slate-200">
+            <p className="mb-6 text-sm text-slate-500">
+              <span className="text-slate-900">
                 {invite.inviterName || invite.inviterEmail}
               </span>{" "}
               invited you to join{" "}
-              <span className="text-slate-200">{invite.orgName}</span> as{" "}
-              <span className="text-slate-200">{invite.role}</span>.
+              <span className="text-slate-900">{invite.orgName}</span> as{" "}
+              <span className="text-slate-900">{invite.role}</span>.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={accept}
                 disabled={busy !== null}
-                className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-brand-400 disabled:opacity-50"
+                className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400 disabled:opacity-50"
               >
                 {busy === "accept" ? "Accepting…" : "Accept"}
               </button>
               <button
                 onClick={decline}
                 disabled={busy !== null}
-                className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-900 hover:bg-slate-100 disabled:opacity-50"
               >
                 {busy === "decline" ? "Declining…" : "Decline"}
               </button>
@@ -108,7 +108,7 @@ export default function InvitationPage() {
           </>
         )}
         {error && (
-          <div className="mt-4 rounded-md border border-rose-700/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+          <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </div>
         )}

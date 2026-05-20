@@ -22,6 +22,8 @@ import DevicePage from "./pages/DevicePage";
 import SessionsPage from "./pages/SessionsPage";
 import MembersPage from "./pages/MembersPage";
 import InvitationPage from "./pages/InvitationPage";
+import PoliciesPage from "./pages/PoliciesPage";
+import PolicyDetailPage from "./pages/PolicyDetailPage";
 import AdminShell from "./admin/AdminShell";
 import AdminOverviewPage from "./admin/OverviewPage";
 import AdminUsersPage from "./admin/UsersPage";
@@ -73,6 +75,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="activity" element={<ActivityPage />} />
             <Route path="callers" element={<CallersPage />} />
             <Route path="callers/:id" element={<CallerDetailPage />} />
+            <Route path="policies" element={<PoliciesPage />} />
+            <Route path="policies/:id" element={<PolicyDetailPage />} />
             <Route path="settings/sessions" element={<SessionsPage />} />
             <Route path="settings/members" element={<MembersPage />} />
             <Route path="invitations/:id" element={<InvitationPage />} />

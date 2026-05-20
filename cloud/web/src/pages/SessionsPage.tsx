@@ -47,20 +47,20 @@ export default function SessionsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Sessions</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-500">
           Browser sessions and authorized CLIs that can act as you.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-md border border-rose-700/60 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
+        <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           {error}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Kind</th>
               <th className="px-4 py-3">Label</th>
@@ -70,7 +70,7 @@ export default function SessionsPage() {
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200">
             {loading && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
@@ -86,29 +86,29 @@ export default function SessionsPage() {
               </tr>
             )}
             {sessions.map((s) => (
-              <tr key={s.id} className="hover:bg-slate-900/40">
+              <tr key={s.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-md px-2 py-0.5 text-xs ${
                       s.kind === "cli"
-                        ? "bg-brand-900/40 text-brand-200"
-                        : "bg-slate-800 text-slate-300"
+                        ? "bg-brand-50 text-brand-700"
+                        : "bg-slate-100 text-slate-600"
                     }`}
                   >
                     {s.kind}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-200">{s.label || "—"}</td>
-                <td className="px-4 py-3 text-slate-400">{relativeTime(s.createdAt)}</td>
-                <td className="px-4 py-3 text-slate-400">{relativeTime(s.lastSeenAt)}</td>
-                <td className="px-4 py-3 text-slate-400">
+                <td className="px-4 py-3 text-slate-900">{s.label || "—"}</td>
+                <td className="px-4 py-3 text-slate-500">{relativeTime(s.createdAt)}</td>
+                <td className="px-4 py-3 text-slate-500">{relativeTime(s.lastSeenAt)}</td>
+                <td className="px-4 py-3 text-slate-500">
                   {new Date(s.expiresAt).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => revoke(s.id)}
                     disabled={busyId === s.id}
-                    className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                    className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-900 hover:bg-slate-100 disabled:opacity-50"
                   >
                     Revoke
                   </button>

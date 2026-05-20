@@ -52,6 +52,12 @@ type createConnectionReq struct {
 		Password    string `json:"password"`
 	} `json:"authSecret"`
 	OAuthConfig *oauthConfigReq `json:"oauthConfig"`
+	// OAuthDCR opts into Dynamic Client Registration (RFC 7591) — the server
+	// is probed for .well-known/oauth-protected-resource and
+	// .well-known/oauth-authorization-server, and a fresh client is registered
+	// on the fly. When set, OAuthConfig (admin-supplied client_id/secret +
+	// URLs) is ignored.
+	OAuthDCR bool `json:"oauthDcr"`
 }
 
 func validTransport(t string) bool {
@@ -125,22 +131,44 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 
 	oauthStatus := ""
 	if method == models.AuthMethodOAuth2Authcode {
-		if req.OAuthConfig == nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "oauthConfig is required for oauth2_authcode")
-			return
+		redirectURI := strings.TrimRight(s.Cfg.AppBaseURL, "/") + oauthCallbackPath
+		if req.OAuthDCR {
+			// Discovery + dynamic registration. On any failure we surface a 422
+			// with code dcr_unsupported so the SPA can prompt the user to fall
+			// through to the manual flow.
+			dcrSecret, err := s.runOAuthDCR(r.Context(), orgID, endpoint, redirectURI)
+			if err != nil {
+				writeError(w, http.StatusUnprocessableEntity, "dcr_unsupported", err.Error())
+				return
+			}
+			secret.ClientID = dcrSecret.ClientID
+			secret.ClientSecret = dcrSecret.ClientSecret
+			secret.AuthorizeURL = dcrSecret.AuthorizeURL
+			secret.TokenURL = dcrSecret.TokenURL
+			secret.Scopes = dcrSecret.Scopes
+			secret.RedirectURI = redirectURI
+			secret.DCRRegistrationURL = dcrSecret.DCRRegistrationURL
+			secret.DCRRegistrationAccessToken = dcrSecret.DCRRegistrationAccessToken
+			secret.DCRClientSecretExpiresAt = dcrSecret.DCRClientSecretExpiresAt
+			oauthStatus = models.OAuthStatusPendingAuthorize
+		} else {
+			if req.OAuthConfig == nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", "oauthConfig is required for oauth2_authcode")
+				return
+			}
+			if err := validateOAuthConfig(req.OAuthConfig); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+			secret.ClientID = strings.TrimSpace(req.OAuthConfig.ClientID)
+			secret.ClientSecret = req.OAuthConfig.ClientSecret
+			secret.AuthorizeURL = strings.TrimSpace(req.OAuthConfig.AuthorizeURL)
+			secret.TokenURL = strings.TrimSpace(req.OAuthConfig.TokenURL)
+			secret.Scopes = strings.TrimSpace(req.OAuthConfig.Scopes)
+			secret.ExtraParams = req.OAuthConfig.ExtraParams
+			secret.RedirectURI = redirectURI
+			oauthStatus = models.OAuthStatusPendingAuthorize
 		}
-		if err := validateOAuthConfig(req.OAuthConfig); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-			return
-		}
-		secret.ClientID = strings.TrimSpace(req.OAuthConfig.ClientID)
-		secret.ClientSecret = req.OAuthConfig.ClientSecret
-		secret.AuthorizeURL = strings.TrimSpace(req.OAuthConfig.AuthorizeURL)
-		secret.TokenURL = strings.TrimSpace(req.OAuthConfig.TokenURL)
-		secret.Scopes = strings.TrimSpace(req.OAuthConfig.Scopes)
-		secret.ExtraParams = req.OAuthConfig.ExtraParams
-		secret.RedirectURI = strings.TrimRight(s.Cfg.AppBaseURL, "/") + oauthCallbackPath
-		oauthStatus = models.OAuthStatusPendingAuthorize
 	} else {
 		if err := validateSecret(method, secret); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -175,6 +203,49 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	writeJSON(w, http.StatusOK, conn)
+}
+
+// runOAuthDCR drives the Discovery + Dynamic Client Registration cascade
+// for a new connection. Returns a fully-populated AuthSecret subset (the
+// caller copies fields into the persisted secret) or an error suitable for
+// rendering into a `dcr_unsupported` HTTP response.
+func (s *Server) runOAuthDCR(ctx context.Context, orgID uuid.UUID, endpointURL, redirectURI string) (mcp.AuthSecret, error) {
+	meta, err := mcp.Probe(ctx, endpointURL)
+	if err != nil {
+		return mcp.AuthSecret{}, err
+	}
+
+	clientName := "Bright Guard"
+	if s.Orgs != nil {
+		if org, oerr := s.Orgs.Get(ctx, orgID); oerr == nil && org != nil && org.Name != "" {
+			clientName = "Bright Guard - " + org.Name
+		}
+	}
+
+	scope := strings.Join(meta.ScopesSupported, " ")
+	resp, err := mcp.RegisterClient(ctx, meta.RegistrationURL, mcp.DCRRequest{
+		ApplicationType:         "web",
+		RedirectURIs:            []string{redirectURI},
+		GrantTypes:              []string{"authorization_code", "refresh_token"},
+		ResponseTypes:           []string{"code"},
+		TokenEndpointAuthMethod: "client_secret_post",
+		ClientName:              clientName,
+		Scope:                   scope,
+	})
+	if err != nil {
+		return mcp.AuthSecret{}, err
+	}
+
+	return mcp.AuthSecret{
+		ClientID:                   resp.ClientID,
+		ClientSecret:               resp.ClientSecret,
+		AuthorizeURL:               meta.AuthorizeURL,
+		TokenURL:                   meta.TokenURL,
+		Scopes:                     scope,
+		DCRRegistrationURL:         resp.RegistrationClientURI,
+		DCRRegistrationAccessToken: resp.RegistrationAccessToken,
+		DCRClientSecretExpiresAt:   resp.ClientSecretExpiresAt,
+	}, nil
 }
 
 func validateOAuthConfig(c *oauthConfigReq) error {

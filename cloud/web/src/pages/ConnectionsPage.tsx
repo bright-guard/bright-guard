@@ -34,19 +34,19 @@ const AUTH_LABEL: Record<MCPConnection["authMethod"], string> = {
 const OAUTH_CHIP: Record<Exclude<OAuthStatus, "">, { label: string; cls: string }> = {
   pending_authorize: {
     label: "Pending authorization",
-    cls: "bg-amber-950/60 text-amber-300 border-amber-700/60",
+    cls: "bg-[#a97f13]/10 text-[#a97f13] border-[#a97f13]/30",
   },
   authorized: {
     label: "Authorized",
-    cls: "bg-emerald-950/60 text-emerald-300 border-emerald-700/60",
+    cls: "bg-[#006128]/10 text-[#006128] border-[#006128]/30",
   },
   expired_refresh: {
     label: "Token expired",
-    cls: "bg-amber-950/60 text-amber-300 border-amber-700/60",
+    cls: "bg-[#a97f13]/10 text-[#a97f13] border-[#a97f13]/30",
   },
   needs_reauth: {
     label: "Needs re-auth",
-    cls: "bg-rose-950/60 text-rose-300 border-rose-700/60",
+    cls: "bg-rose-50 text-rose-700 border-rose-300",
   },
 };
 
@@ -146,28 +146,28 @@ export default function ConnectionsPage() {
   return (
     <div className="space-y-6">
       {toast && (
-        <div className="rounded-md border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm text-slate-200 shadow">
+        <div className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 shadow">
           {toast}
         </div>
       )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">MCP Connections</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500">
             Direct connections to remote MCP servers — no gateway required.
           </p>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-brand-400"
+          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400"
         >
           Add connection
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-12 px-4 py-3"></th>
               <th className="px-4 py-3">Name</th>
@@ -178,7 +178,7 @@ export default function ConnectionsPage() {
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200">
             {loading && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
@@ -196,21 +196,21 @@ export default function ConnectionsPage() {
             {conns.map((c) => {
               const oauthChip = c.oauthStatus ? OAUTH_CHIP[c.oauthStatus] : null;
               return (
-              <tr key={c.id} className="hover:bg-slate-900/40">
+              <tr key={c.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <span
                     className={`inline-block h-2.5 w-2.5 rounded-full ${STATUS_STYLES[c.status]}`}
                     title={STATUS_LABEL[c.status]}
                   />
                 </td>
-                <td className="px-4 py-3 font-medium text-slate-200">
+                <td className="px-4 py-3 font-medium text-slate-900">
                   <Link to={`/app/mcp-connections/${c.id}`} className="hover:underline">
                     {c.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-400">{c.endpointUrl}</td>
-                <td className="px-4 py-3 text-slate-400">{c.transport}</td>
-                <td className="px-4 py-3 text-slate-400">
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.endpointUrl}</td>
+                <td className="px-4 py-3 text-slate-500">{c.transport}</td>
+                <td className="px-4 py-3 text-slate-500">
                   <div className="flex flex-col gap-1">
                     <span>{AUTH_LABEL[c.authMethod]}</span>
                     {oauthChip && (
@@ -220,10 +220,10 @@ export default function ConnectionsPage() {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-slate-400">
+                <td className="px-4 py-3 text-slate-500">
                   {relativeTime(c.lastDiscoveredAt)}
                   {c.lastError && (
-                    <div className="mt-1 text-xs text-rose-400" title={c.lastError}>
+                    <div className="mt-1 text-xs text-rose-600" title={c.lastError}>
                       {c.lastError.slice(0, 80)}
                     </div>
                   )}
@@ -236,7 +236,7 @@ export default function ConnectionsPage() {
                     <button
                       onClick={() => reauthorize(c.id)}
                       disabled={busy === c.id}
-                      className="rounded-md border border-amber-700/60 px-3 py-1 text-xs text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
+                      className="rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50"
                     >
                       {busy === c.id ? "Working…" : "Reauthorize"}
                     </button>
@@ -244,7 +244,7 @@ export default function ConnectionsPage() {
                     <button
                       onClick={() => discover(c.id)}
                       disabled={busy === c.id}
-                      className="rounded-md border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
+                      className="rounded-md border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                     >
                       {busy === c.id ? "Working…" : "Discover now"}
                     </button>
@@ -252,7 +252,7 @@ export default function ConnectionsPage() {
                   <button
                     onClick={() => remove(c.id)}
                     disabled={busy === c.id}
-                    className="ml-2 rounded-md border border-rose-900/60 px-3 py-1 text-xs text-rose-300 hover:bg-rose-950/40 disabled:opacity-50"
+                    className="ml-2 rounded-md border border-rose-300 px-3 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                   >
                     Delete
                   </button>

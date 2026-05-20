@@ -96,40 +96,40 @@ export default function DevicePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-950/70">
+    <div className="min-h-screen bg-[var(--bg-app)] text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="h-7 w-7 rounded-md bg-gradient-to-br from-brand-400 to-brand-700" />
             <div className="font-semibold tracking-tight">Bright Guard</div>
           </div>
-          <div className="text-sm text-slate-400">Signed in as {user?.email}</div>
+          <div className="text-sm text-slate-500">Signed in as {user?.email}</div>
         </div>
       </header>
       <main className="mx-auto grid max-w-md place-items-center px-4 py-16">
-        <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-xl">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
           <h1 className="text-xl font-semibold">Authorize a device</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-500">
             Connect a CLI or other client to your Bright Guard account.
           </p>
 
           {phase === "input" && (
             <form onSubmit={onSubmit} className="mt-5 space-y-4">
               <label className="block text-sm">
-                <span className="mb-1 block text-slate-300">Device code</span>
+                <span className="mb-1 block text-slate-600">Device code</span>
                 <input
                   autoFocus
                   required
                   placeholder="ABCD-WXYZ"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-center font-mono text-lg tracking-widest placeholder:text-slate-600 focus:border-brand-500 focus:outline-none"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-center font-mono text-lg tracking-widest placeholder:text-slate-400 focus:border-brand-500 focus:outline-none"
                 />
               </label>
-              {error && <div className="text-sm text-rose-400">{error}</div>}
+              {error && <div className="text-sm text-rose-600">{error}</div>}
               <button
                 type="submit"
-                className="w-full rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-brand-400"
+                className="w-full rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400"
               >
                 Continue
               </button>
@@ -137,32 +137,32 @@ export default function DevicePage() {
           )}
 
           {phase === "loading" && (
-            <div className="mt-6 text-sm text-slate-400">Looking up code…</div>
+            <div className="mt-6 text-sm text-slate-500">Looking up code…</div>
           )}
 
           {phase === "confirm" && info && (
             <div className="mt-5 space-y-5">
-              <div className="rounded-md border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm">
-                <div className="text-slate-300">
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                <div className="text-slate-600">
                   <span className="font-mono">{info.clientLabel || "bg-cli"}</span> is requesting access to your Bright Guard account.
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
                   Expires {new Date(info.expiresAt).toLocaleString()}
                 </div>
               </div>
-              {error && <div className="text-sm text-rose-400">{error}</div>}
+              {error && <div className="text-sm text-rose-600">{error}</div>}
               <div className="flex gap-3">
                 <button
                   onClick={deny}
                   disabled={busy}
-                  className="flex-1 rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50"
+                  className="flex-1 rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 disabled:opacity-50"
                 >
                   Deny
                 </button>
                 <button
                   onClick={approve}
                   disabled={busy}
-                  className="flex-1 rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-brand-400 disabled:opacity-50"
+                  className="flex-1 rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400 disabled:opacity-50"
                 >
                   {busy ? "Working…" : "Authorize"}
                 </button>
@@ -172,7 +172,7 @@ export default function DevicePage() {
 
           {phase === "approved" && (
             <div className="mt-5 space-y-3 text-sm">
-              <div className="rounded-md border border-emerald-700/60 bg-emerald-950/40 px-3 py-2 text-emerald-200">
+              <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-emerald-800">
                 Authorized. You can return to your terminal.
               </div>
             </div>
@@ -180,7 +180,7 @@ export default function DevicePage() {
 
           {phase === "denied" && (
             <div className="mt-5 space-y-3 text-sm">
-              <div className="rounded-md border border-rose-700/60 bg-rose-950/40 px-3 py-2 text-rose-200">
+              <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700">
                 Request denied.
               </div>
             </div>
@@ -188,14 +188,14 @@ export default function DevicePage() {
 
           {phase === "error" && (
             <div className="mt-5 space-y-3 text-sm">
-              <div className="text-rose-400">{error ?? "Something went wrong."}</div>
+              <div className="text-rose-600">{error ?? "Something went wrong."}</div>
               <button
                 onClick={() => {
                   setError(null);
                   setPhase("input");
                   setParams({});
                 }}
-                className="rounded-md border border-slate-700 px-4 py-2 hover:bg-slate-800"
+                className="rounded-md border border-slate-300 px-4 py-2 hover:bg-slate-100"
               >
                 Enter a different code
               </button>

@@ -103,6 +103,25 @@ export type OAuthConfigInput = {
   extraParams?: Record<string, string>;
 };
 
+export type CreateConnectionInput = {
+  name: string;
+  endpointUrl: string;
+  transport: MCPConnectionTransport;
+  authMethod: MCPConnectionAuthMethod;
+  authSecret: {
+    headerName: string;
+    headerValue: string;
+    bearerToken: string;
+    username: string;
+    password: string;
+  };
+  oauthConfig?: OAuthConfigInput;
+  // When true, the API runs RFC 7591 Dynamic Client Registration against
+  // the endpoint instead of consuming `oauthConfig`. A 422 dcr_unsupported
+  // response means the SPA should prompt the user to switch to manual config.
+  oauthDcr?: boolean;
+};
+
 export type AuthorizeResp = {
   authorizeUrl: string;
 };
@@ -151,6 +170,12 @@ export type DeviceLookup = {
   expiresAt: string;
 };
 
+export type ActivityRowDecision = {
+  policyId: string;
+  policyName: string;
+  action: string;
+};
+
 export type ActivityRow = {
   id: string;
   at: string;
@@ -160,6 +185,7 @@ export type ActivityRow = {
   status: string;
   latencyMs: number;
   caller: Record<string, unknown>;
+  decisions: ActivityRowDecision[];
 };
 
 export type ActivityListResp = {
@@ -386,4 +412,49 @@ export type PlatformAuditListResp = {
 export type PlatformActivityListResp = {
   items: ActivityRow[];
   nextCursor: string | null;
+};
+
+// --- Policies (UC4 — CEL-based audit-mode policies) ---
+
+export type PolicyAction = "deny" | "warn";
+
+export type Policy = {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string;
+  expression: string;
+  action: PolicyAction;
+  enabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  last24hMatches: number;
+};
+
+export type PolicyCreateReq = {
+  name: string;
+  description: string;
+  expression: string;
+  action: PolicyAction;
+  enabled: boolean;
+};
+
+export type PolicyPatchReq = Partial<PolicyCreateReq>;
+
+export type PolicySimulateMatch = {
+  invocationId: string;
+  at: string;
+  serverName: string;
+  capabilityKind: string;
+  capabilityName: string;
+  status: string;
+  caller: Record<string, unknown>;
+};
+
+export type PolicySimulateResp = {
+  scanned: number;
+  matches: PolicySimulateMatch[];
+  from: string;
+  to: string;
 };

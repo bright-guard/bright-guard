@@ -8,6 +8,8 @@ import type {
   OAuthConfigInput,
 } from "../api/types";
 
+type OAuthMode = "auto" | "manual";
+
 type Step = 1 | 2 | 3;
 
 // Pre-fills for two common providers. Users still supply their own client_id
@@ -19,6 +21,17 @@ type OAuthPreset = {
   scopes: string;
   extraParams: string;
 };
+
+// isDcrUnsupported pulls the structured error code out of an ApiError body
+// shaped like {"error":{"code":"dcr_unsupported","message":"..."}}.
+function isDcrUnsupported(err: ApiError): boolean {
+  const body = err.body;
+  if (body && typeof body === "object") {
+    const e = (body as { error?: { code?: string } }).error;
+    return e?.code === "dcr_unsupported";
+  }
+  return false;
+}
 
 const OAUTH_PRESETS: Record<string, OAuthPreset> = {
   atlassian: {
@@ -60,6 +73,7 @@ export default function AddConnectionWizard({
   const [password, setPassword] = useState("");
 
   // OAuth2 form state.
+  const [oauthMode, setOauthMode] = useState<OAuthMode>("auto");
   const [oauthAuthorize, setOauthAuthorize] = useState("");
   const [oauthToken, setOauthToken] = useState("");
   const [oauthClientId, setOauthClientId] = useState("");
@@ -117,6 +131,11 @@ export default function AddConnectionWizard({
       case "basic":
         return username !== "";
       case "oauth2_authcode": {
+        if (oauthMode === "auto") {
+          // In auto-discover mode there's nothing to fill in on step 2 — the
+          // server tells us where to register on submit.
+          return true;
+        }
         if (!oauthClientId.trim() || !oauthAuthorize.trim() || !oauthToken.trim()) return false;
         try {
           const a = new URL(oauthAuthorize);
@@ -148,24 +167,50 @@ export default function AddConnectionWizard({
         },
       };
       if (authMethod === "oauth2_authcode") {
-        const extra = parsedExtraParams();
-        if (typeof extra === "string") {
-          throw new Error(extra);
+        if (oauthMode === "auto") {
+          body.oauthDcr = true;
+        } else {
+          const extra = parsedExtraParams();
+          if (typeof extra === "string") {
+            throw new Error(extra);
+          }
+          const oauthConfig: OAuthConfigInput = {
+            authorizeUrl: oauthAuthorize.trim(),
+            tokenUrl: oauthToken.trim(),
+            clientId: oauthClientId.trim(),
+            clientSecret: oauthClientSecret,
+            scopes: oauthScopes.trim(),
+            extraParams: extra,
+          };
+          body.oauthConfig = oauthConfig;
         }
-        const oauthConfig: OAuthConfigInput = {
-          authorizeUrl: oauthAuthorize.trim(),
-          tokenUrl: oauthToken.trim(),
-          clientId: oauthClientId.trim(),
-          clientSecret: oauthClientSecret,
-          scopes: oauthScopes.trim(),
-          extraParams: extra,
-        };
-        body.oauthConfig = oauthConfig;
       }
-      const r = await api<MCPConnection>(
-        `/api/orgs/${orgId}/mcp-connections`,
-        { method: "POST", body: JSON.stringify(body) },
-      );
+      let r: MCPConnection;
+      try {
+        r = await api<MCPConnection>(
+          `/api/orgs/${orgId}/mcp-connections`,
+          { method: "POST", body: JSON.stringify(body) },
+        );
+      } catch (err) {
+        // dcr_unsupported = the server doesn't advertise the OAuth metadata we
+        // need, or registration itself rejected us. Surface a clear prompt and
+        // switch the user into manual mode rather than leaving them stuck.
+        if (
+          err instanceof ApiError &&
+          err.status === 422 &&
+          authMethod === "oauth2_authcode" &&
+          oauthMode === "auto" &&
+          isDcrUnsupported(err)
+        ) {
+          setOauthMode("manual");
+          setStep(2);
+          setError(
+            "This server doesn't support automatic registration. Enter the OAuth client details manually.",
+          );
+          return;
+        }
+        throw err;
+      }
       setResult(r);
       // For OAuth2 we immediately kick off the authorize handshake and
       // navigate the browser away to the provider's consent screen.
@@ -328,6 +373,51 @@ export default function AddConnectionWizard({
 
             {authMethod === "oauth2_authcode" && (
               <>
+                <div className="space-y-2 rounded-md border border-slate-700 bg-slate-950 p-3 text-sm">
+                  <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="radio"
+                      name="oauthMode"
+                      checked={oauthMode === "auto"}
+                      onChange={() => setOauthMode("auto")}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-slate-200">
+                        Auto-discover (recommended)
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        Probes the endpoint's well-known OAuth metadata and
+                        registers a client per RFC 7591.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="radio"
+                      name="oauthMode"
+                      checked={oauthMode === "manual"}
+                      onChange={() => setOauthMode("manual")}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-slate-200">
+                        Configure manually
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        Paste client_id / client_secret + authorize/token URLs.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+                {oauthMode === "auto" && (
+                  <div className="rounded-md bg-slate-950 px-3 py-2 text-xs text-slate-400">
+                    Nothing else to fill in — Bright Guard will register the
+                    OAuth client when you save.
+                  </div>
+                )}
+                {oauthMode === "manual" && (
+                <>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-slate-400">Preset:</span>
                   <button
@@ -401,6 +491,8 @@ export default function AddConnectionWizard({
                     className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
+                </>
+                )}
               </>
             )}
 

@@ -24,13 +24,13 @@ type Status = (typeof STATUSES)[number];
 function statusClasses(status: string): string {
   switch (status) {
     case "ok":
-      return "bg-emerald-900/50 text-emerald-300";
+      return "bg-[#006128]/10 text-[#006128]";
     case "error":
-      return "bg-rose-900/50 text-rose-300";
+      return "bg-[#b71c1c]/10 text-rose-700";
     case "denied":
-      return "bg-rose-900/60 text-rose-200 uppercase tracking-wide";
+      return "bg-rose-100 text-rose-700 uppercase tracking-wide";
     default:
-      return "bg-slate-800 text-slate-300";
+      return "bg-slate-200 text-slate-600";
   }
 }
 
@@ -172,21 +172,21 @@ export default function ActivityPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Activity</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-500">
           Org-wide timeline of MCP invocations.
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-md border border-slate-800 bg-slate-900/40 p-1">
+        <div className="flex gap-1 rounded-md border border-slate-200 bg-white p-1">
           {WINDOWS.map((w) => (
             <button
               key={w.id}
               onClick={() => setWindowId(w.id)}
               className={`rounded px-3 py-1 text-xs ${
                 windowId === w.id
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-slate-200 text-white"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
             >
               {w.label}
@@ -223,21 +223,21 @@ export default function ActivityPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search capability or server…"
-          className="ml-auto w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
+          className="ml-auto w-64 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
         />
       </div>
 
       <SummaryCard summary={summary} />
 
       {error && (
-        <div className="rounded-md border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">
+        <div className="rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">When</th>
               <th className="px-4 py-3">MCP server</th>
@@ -247,7 +247,7 @@ export default function ActivityPage() {
               <th className="px-4 py-3">Caller</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200">
             {loading && rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
@@ -263,19 +263,19 @@ export default function ActivityPage() {
               </tr>
             )}
             {rows.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-900/40">
-                <td className="px-4 py-3 text-slate-400" title={r.at}>
+              <tr key={r.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-slate-500" title={r.at}>
                   {relativeTime(r.at)}
                 </td>
                 <td className="px-4 py-3">
                   <Link
                     to={`/app/mcp-servers/${r.mcpServer.id}`}
-                    className="text-brand-300 hover:underline"
+                    className="text-brand-600 hover:underline"
                   >
                     {r.mcpServer.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3 font-mono text-slate-200">
+                <td className="px-4 py-3 font-mono text-slate-900">
                   <span className="text-slate-500">{r.capabilityKind}:</span>
                   {r.capabilityName}
                 </td>
@@ -286,8 +286,21 @@ export default function ActivityPage() {
                   >
                     {statusLabel(r.status)}
                   </span>
+                  {r.decisions?.map((d) => (
+                    <span
+                      key={d.policyId}
+                      className={`ml-2 inline-flex rounded-md border px-1.5 py-0.5 text-[10px] uppercase ${
+                        d.action === "deny"
+                          ? "border-rose-300 bg-rose-50 text-rose-700"
+                          : "border-amber-300 bg-amber-50 text-amber-700"
+                      }`}
+                      title={`would have been ${d.action === "deny" ? "blocked" : "warned"} by policy "${d.policyName}"`}
+                    >
+                      by {d.policyName}
+                    </span>
+                  ))}
                 </td>
-                <td className="px-4 py-3 text-slate-400">{r.latencyMs}ms</td>
+                <td className="px-4 py-3 text-slate-500">{r.latencyMs}ms</td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-500">
                   {truncate(JSON.stringify(r.caller ?? {}))}
                 </td>
@@ -302,7 +315,7 @@ export default function ActivityPage() {
           <button
             onClick={loadMore}
             disabled={loadingMore}
-            className="rounded-md border border-slate-700 bg-slate-900 px-4 py-1.5 text-sm text-slate-200 hover:border-slate-600 disabled:opacity-50"
+            className="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm text-slate-900 hover:border-slate-600 disabled:opacity-50"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>
@@ -328,11 +341,11 @@ function Chip({
   children: React.ReactNode;
   tone?: string;
 }) {
-  const inactive = "border-slate-800 bg-slate-900/40 text-slate-400 hover:text-slate-200";
-  let activeCls = "border-brand-500 bg-brand-900/40 text-brand-200";
-  if (tone === "ok") activeCls = "border-emerald-600 bg-emerald-900/40 text-emerald-200";
-  if (tone === "error") activeCls = "border-rose-600 bg-rose-900/40 text-rose-200";
-  if (tone === "denied") activeCls = "border-amber-600 bg-amber-900/40 text-amber-200";
+  const inactive = "border-slate-200 bg-white text-slate-500 hover:text-slate-900";
+  let activeCls = "border-brand-500 bg-brand-50 text-brand-700";
+  if (tone === "ok") activeCls = "border-emerald-600 bg-emerald-50 text-emerald-700";
+  if (tone === "error") activeCls = "border-rose-600 bg-rose-50 text-rose-700";
+  if (tone === "denied") activeCls = "border-amber-600 bg-amber-50 text-amber-800";
   return (
     <button
       type="button"
@@ -347,22 +360,22 @@ function Chip({
 function SummaryCard({ summary }: { summary: ActivitySummary | null }) {
   if (!summary) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-slate-500">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
         Loading summary…
       </div>
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
-      <span className="text-slate-400">
-        <span className="font-semibold text-slate-200">
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+      <span className="text-slate-500">
+        <span className="font-semibold text-slate-900">
           {summary.totalInvocations}
         </span>{" "}
         total
       </span>
-      <span className="text-emerald-300">{summary.byStatus.ok} ok</span>
-      <span className="text-rose-300">{summary.byStatus.error} error</span>
-      <span className="text-amber-300">{summary.byStatus.denied} denied</span>
+      <span className="text-[#006128]">{summary.byStatus.ok} ok</span>
+      <span className="text-rose-700">{summary.byStatus.error} error</span>
+      <span className="text-[#a97f13]">{summary.byStatus.denied} denied</span>
       <span className="text-slate-500">
         · tool {summary.byCapabilityKind.tool} ·{" "}
         resource {summary.byCapabilityKind.resource} ·{" "}

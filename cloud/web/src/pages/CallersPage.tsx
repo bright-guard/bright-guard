@@ -88,17 +88,17 @@ export default function CallersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Callers</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-500">
           Distinct AI agents and identities observed invoking MCP servers in this org.
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-md border border-slate-800 bg-slate-900/40 p-1">
+        <div className="flex gap-1 rounded-md border border-slate-200 bg-white p-1">
           <button
             onClick={() => setMode("all")}
             className={`rounded px-3 py-1 text-xs ${
-              mode === "all" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+              mode === "all" ? "bg-brand-500 text-white" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             All
@@ -106,7 +106,7 @@ export default function CallersPage() {
           <button
             onClick={() => setMode("new")}
             className={`rounded px-3 py-1 text-xs ${
-              mode === "new" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+              mode === "new" ? "bg-brand-500 text-white" : "text-slate-500 hover:text-slate-900"
             }`}
           >
             New (last 7d)
@@ -117,26 +117,26 @@ export default function CallersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search caller label…"
-          className="ml-auto w-64 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
+          className="ml-auto w-64 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-brand-500 focus:outline-none"
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
-        <span className="text-slate-400">
-          <span className="font-semibold text-slate-200">{totals.total}</span> total
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <span className="text-slate-500">
+          <span className="font-semibold text-slate-900">{totals.total}</span> total
         </span>
-        <span className="text-amber-300">{totals.flaggedNew} new</span>
+        <span className="text-[#a97f13]">{totals.flaggedNew} new</span>
       </div>
 
       {error && (
-        <div className="rounded-md border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">
+        <div className="rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Caller</th>
               <th className="px-4 py-3">First seen</th>
@@ -144,7 +144,7 @@ export default function CallersPage() {
               <th className="px-4 py-3 text-right">Invocations</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200">
             {loading && rows.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
@@ -161,15 +161,15 @@ export default function CallersPage() {
               </tr>
             )}
             {rows.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-900/40">
+              <tr key={r.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <Link
                     to={`/app/callers/${r.id}`}
-                    className="flex items-center gap-2 text-brand-300 hover:underline"
+                    className="flex items-center gap-2 text-brand-600 hover:underline"
                   >
                     <span>{r.label || "(anonymous)"}</span>
                     {r.flaggedNew && (
-                      <span className="rounded-full bg-amber-900/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-800">
                         NEW
                       </span>
                     )}
@@ -181,13 +181,13 @@ export default function CallersPage() {
                     {r.signature.slice(0, 12)}…
                   </div>
                 </td>
-                <td className="px-4 py-3 text-slate-400" title={r.firstSeenAt}>
+                <td className="px-4 py-3 text-slate-500" title={r.firstSeenAt}>
                   {relativeTime(r.firstSeenAt)}
                 </td>
-                <td className="px-4 py-3 text-slate-400" title={r.lastSeenAt}>
+                <td className="px-4 py-3 text-slate-500" title={r.lastSeenAt}>
                   {relativeTime(r.lastSeenAt)}
                 </td>
-                <td className="px-4 py-3 text-right text-slate-200">
+                <td className="px-4 py-3 text-right text-slate-900">
                   {r.invocationCount.toLocaleString()}
                 </td>
               </tr>
@@ -201,7 +201,7 @@ export default function CallersPage() {
           <button
             onClick={loadMore}
             disabled={loadingMore}
-            className="rounded-md border border-slate-700 bg-slate-900 px-4 py-1.5 text-sm text-slate-200 hover:border-slate-600 disabled:opacity-50"
+            className="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm text-slate-900 hover:border-slate-600 disabled:opacity-50"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>

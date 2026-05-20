@@ -232,3 +232,37 @@ type MCPConnection struct {
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	OAuthStatus      string     `json:"oauthStatus"`
 }
+
+// PolicyAction is the user-visible verdict a matching policy assigns.
+// Both are audit-only in UC4; no in-data-path enforcement.
+type PolicyAction string
+
+const (
+	PolicyActionDeny PolicyAction = "deny"
+	PolicyActionWarn PolicyAction = "warn"
+)
+
+// Policy is a CEL-based rule evaluated against observed invocations.
+type Policy struct {
+	ID            uuid.UUID    `json:"id"`
+	OrgID         uuid.UUID    `json:"orgId"`
+	Name          string       `json:"name"`
+	Description   string       `json:"description"`
+	Expression    string       `json:"expression"`
+	Action        PolicyAction `json:"action"`
+	Enabled       bool         `json:"enabled"`
+	CreatedBy     uuid.UUID    `json:"createdBy"`
+	CreatedAt     time.Time    `json:"createdAt"`
+	UpdatedAt     time.Time    `json:"updatedAt"`
+	Last24hMatches int         `json:"last24hMatches"`
+}
+
+// Decision is a per-invocation, per-policy verdict row.
+type Decision struct {
+	InvocationID uuid.UUID    `json:"invocationId"`
+	PolicyID     uuid.UUID    `json:"policyId"`
+	PolicyName   string       `json:"policyName"`
+	Matched      bool         `json:"matched"`
+	Action       PolicyAction `json:"action"`
+	At           time.Time    `json:"at"`
+}

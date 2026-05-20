@@ -41,6 +41,15 @@ type AuthSecret struct {
 	RefreshToken string            `json:"refresh_token,omitempty"`
 	ExpiresAt    *time.Time        `json:"expires_at,omitempty"`
 	TokenType    string            `json:"token_type,omitempty"`
+
+	// Dynamic Client Registration (RFC 7591 / 7592) provenance. These are
+	// populated only when the client_id/secret above were minted via DCR rather
+	// than typed in by an admin. The registration_access_token + URL are kept
+	// so a future feature can re-register / rotate / delete the client without
+	// requiring a fresh discovery cycle.
+	DCRRegistrationURL         string `json:"dcr_registration_url,omitempty"`
+	DCRRegistrationAccessToken string `json:"dcr_registration_access_token,omitempty"`
+	DCRClientSecretExpiresAt   int64  `json:"dcr_client_secret_expires_at,omitempty"`
 }
 
 // ErrAuthMethodUnsupported is returned when a transport is asked to use an

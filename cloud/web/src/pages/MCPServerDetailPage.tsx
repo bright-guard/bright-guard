@@ -59,7 +59,7 @@ export default function MCPServerDetailPage() {
     }
   };
 
-  if (error) return <div className="text-rose-400">Error: {error}</div>;
+  if (error) return <div className="text-rose-600">Error: {error}</div>;
   if (!detail) return <div className="text-slate-500">Loading…</div>;
 
   const byKind: Record<string, MCPCapability[]> = {};
@@ -91,33 +91,33 @@ export default function MCPServerDetailPage() {
         <Field label="Last seen" value={relativeTime(detail.lastSeenAt)} />
       </div>
 
-      <div className="text-sm text-slate-400">
+      <div className="text-sm text-slate-500">
         {detail.gatewayId ? (
           <>
             Reported by gateway{" "}
-            <Link to={`/app/gateways/${detail.gatewayId}`} className="text-brand-300 hover:underline">
+            <Link to={`/app/gateways/${detail.gatewayId}`} className="text-brand-600 hover:underline">
               {detail.gatewayName}
             </Link>
           </>
         ) : detail.connectionId ? (
           <>
             Discovered via connection{" "}
-            <Link to="/app/mcp-connections" className="text-brand-300 hover:underline">
+            <Link to="/app/mcp-connections" className="text-brand-600 hover:underline">
               {detail.connectionName}
             </Link>
           </>
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
               Exposure
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <ExposureBadge state={detail.exposureState} />
-              <span className="text-sm text-slate-300">
+              <span className="text-sm text-slate-600">
                 {detail.exposureReason || "no reason recorded"}
               </span>
             </div>
@@ -132,7 +132,7 @@ export default function MCPServerDetailPage() {
             type="button"
             onClick={reclassify}
             disabled={reclassifying}
-            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:border-slate-500 disabled:opacity-50"
+            className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 hover:border-slate-500 disabled:opacity-50"
           >
             {reclassifying ? "Reclassifying…" : "Re-classify"}
           </button>
@@ -142,32 +142,32 @@ export default function MCPServerDetailPage() {
       <div className="space-y-5">
         {kinds.map((kind) => (
           <div key={kind}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
               {kind}s ({byKind[kind].length})
             </h2>
-            <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Description</th>
                     <th className="px-4 py-3 text-right">Enabled</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-slate-200">
                   {byKind[kind].map((c) => (
                     <tr key={c.id} className={c.enabled ? "" : "opacity-60"}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-slate-200">{c.name}</span>
+                          <span className="font-mono text-slate-900">{c.name}</span>
                           {!c.enabled && (
-                            <span className="rounded-full bg-rose-900/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-200">
+                            <span className="rounded-full bg-[#b71c1c]/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-700">
                               DISABLED
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{c.description || "—"}</td>
+                      <td className="px-4 py-3 text-slate-500">{c.description || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <CapabilityToggle
                           cap={c}
@@ -183,24 +183,24 @@ export default function MCPServerDetailPage() {
           </div>
         ))}
         {kinds.length === 0 && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
             No capabilities reported yet.
           </div>
         )}
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Recent activity
         </h2>
         {detail.invocations.length === 0 ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
             No invocations recorded.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">When</th>
                   <th className="px-4 py-3">Capability</th>
@@ -208,11 +208,11 @@ export default function MCPServerDetailPage() {
                   <th className="px-4 py-3">Latency</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-slate-200">
                 {detail.invocations.map((inv) => (
                   <tr key={inv.id}>
-                    <td className="px-4 py-3 text-slate-400">{relativeTime(inv.at)}</td>
-                    <td className="px-4 py-3 font-mono text-slate-200">
+                    <td className="px-4 py-3 text-slate-500">{relativeTime(inv.at)}</td>
+                    <td className="px-4 py-3 font-mono text-slate-900">
                       <span className="text-slate-500">{inv.capabilityKind}/</span>
                       {inv.capabilityName}
                     </td>
@@ -220,14 +220,14 @@ export default function MCPServerDetailPage() {
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs ${
                           inv.status === "ok"
-                            ? "bg-emerald-900/50 text-emerald-300"
-                            : "bg-rose-900/50 text-rose-300"
+                            ? "bg-[#006128]/10 text-[#006128]"
+                            : "bg-[#b71c1c]/10 text-rose-700"
                         }`}
                       >
                         {inv.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{inv.latencyMs}ms</td>
+                    <td className="px-4 py-3 text-slate-500">{inv.latencyMs}ms</td>
                   </tr>
                 ))}
               </tbody>
@@ -241,9 +241,9 @@ export default function MCPServerDetailPage() {
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-sm text-slate-200">{value}</div>
+      <div className="mt-1 text-sm text-slate-900">{value}</div>
     </div>
   );
 }
@@ -280,7 +280,7 @@ function CapabilityToggle({
       title={tip}
       aria-pressed={cap.enabled}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        cap.enabled ? "bg-emerald-600" : "bg-slate-700"
+        cap.enabled ? "bg-emerald-600" : "bg-slate-300"
       } disabled:opacity-50`}
     >
       <span

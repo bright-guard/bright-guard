@@ -6,6 +6,7 @@ import type { ExposureState, MCPServerWithCounts } from "../api/types";
 import { relativeTime } from "../lib/time";
 import {
   EXPOSURE_BADGE_CLASS,
+  EXPOSURE_DOT_CLASS,
   EXPOSURE_LABEL,
   EXPOSURE_STATES,
 } from "../lib/exposure";
@@ -49,7 +50,7 @@ export default function MCPServersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">MCP Servers</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-500">
           Every MCP server reported by one of your gateways.
         </p>
       </div>
@@ -65,15 +66,15 @@ export default function MCPServersPage() {
             key={st}
             label={`${EXPOSURE_LABEL[st]} (${counts[st]})`}
             active={filter === st}
-            badgeClass={EXPOSURE_BADGE_CLASS[st]}
+            badgeClass={EXPOSURE_DOT_CLASS[st]}
             onClick={() => setFilter(st)}
           />
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-400">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Address</th>
@@ -84,7 +85,7 @@ export default function MCPServersPage() {
               <th className="px-4 py-3">Last seen</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800">
+          <tbody className="divide-y divide-slate-200">
             {loading && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
@@ -102,19 +103,19 @@ export default function MCPServersPage() {
               </tr>
             )}
             {visible.map((s) => (
-              <tr key={s.id} className="hover:bg-slate-900/40">
+              <tr key={s.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
-                  <Link to={`/app/mcp-servers/${s.id}`} className="text-brand-300 hover:underline">
+                  <Link to={`/app/mcp-servers/${s.id}`} className="text-brand-600 hover:underline">
                     {s.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-slate-400">{s.address || "—"}</td>
+                <td className="px-4 py-3 text-slate-500">{s.address || "—"}</td>
                 <td className="px-4 py-3">
                   <ExposureBadge state={s.exposureState} />
                 </td>
-                <td className="px-4 py-3 text-slate-400">{s.transport || "—"}</td>
-                <td className="px-4 py-3 text-slate-400">{s.capabilityCount}</td>
-                <td className="px-4 py-3 text-slate-400">
+                <td className="px-4 py-3 text-slate-500">{s.transport || "—"}</td>
+                <td className="px-4 py-3 text-slate-500">{s.capabilityCount}</td>
+                <td className="px-4 py-3 text-slate-500">
                   {s.gatewayId ? (
                     <Link to={`/app/gateways/${s.gatewayId}`} className="hover:underline">
                       <span className="text-xs text-slate-500">gateway / </span>
@@ -129,7 +130,7 @@ export default function MCPServersPage() {
                     "—"
                   )}
                 </td>
-                <td className="px-4 py-3 text-slate-400">{relativeTime(s.lastSeenAt)}</td>
+                <td className="px-4 py-3 text-slate-500">{relativeTime(s.lastSeenAt)}</td>
               </tr>
             ))}
           </tbody>
@@ -151,8 +152,8 @@ function FilterChip({
   onClick: () => void;
 }) {
   const base = active
-    ? "border-brand-500 bg-brand-500/10 text-brand-200"
-    : "border-slate-700 bg-slate-900/40 text-slate-300 hover:border-slate-500";
+    ? "border-brand-500 bg-brand-500/10 text-brand-700"
+    : "border-slate-300 bg-white text-slate-600 hover:border-slate-500";
   return (
     <button
       type="button"

@@ -18,6 +18,7 @@ import (
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/db"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/policy"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/scheduler"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/store"
 )
@@ -110,6 +111,14 @@ func main() {
 	callerSweep := scheduler.NewCallerSweeper(callers, connections, 5*time.Minute)
 	go callerSweep.Run(rootCtx)
 
+	policies := &store.Policies{Pool: pool}
+	policyEngine, err := policy.New()
+	if err != nil {
+		log.Fatalf("policy engine: %v", err)
+	}
+	policySweep := scheduler.NewPolicySweeper(policies, connections, policyEngine, 30*time.Second)
+	go policySweep.Run(rootCtx)
+
 	cookieOpt := auth.CookieOpts{
 		Secure:   cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
@@ -146,7 +155,10 @@ func main() {
 		Invitations: invitations,
 		Email:       mailer,
 		Platform:    platform,
+		Policies:    policies,
 		Scheduler:   sched,
+		PolicySweep: policySweep,
+		PolicyEngine: policyEngine,
 		Google:      google,
 		Dev:         dev,
 		Cookie:      cookieOpt,
