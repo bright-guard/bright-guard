@@ -1,0 +1,155 @@
+{{ define "main" }}
+{{ $s := hugo.Data.site }}
+
+<section class="hero">
+  <div class="hero-grid" aria-hidden="true"></div>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="container hero-inner">
+    <div class="eyebrow">
+      <span class="dot"></span>
+      <span>AI control plane · MCP governance</span>
+    </div>
+    <h1 class="hero-title">
+      The control plane for<br>
+      <span class="accent">AI infrastructure.</span>
+    </h1>
+    <p class="hero-sub">
+      Bright Guard gives enterprises visibility, governance, and enforcement over the new surface AI agents have opened up — discovering every MCP endpoint, every capability, and every interaction across cloud, endpoint, and network.
+    </p>
+    <div class="hero-cta">
+      <a href="#vision" class="btn btn-primary">See the vision</a>
+      <a href="#use-cases" class="btn btn-ghost">Explore use cases</a>
+    </div>
+    <dl class="hero-stats">
+      <div><dt>Discover</dt><dd>Every MCP server, via DNS.</dd></div>
+      <div><dt>Govern</dt><dd>Policy by endpoint, user, network.</dd></div>
+      <div><dt>Enforce</dt><dd>Cloud, cluster, or endpoint.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section id="problem" class="section section-problem">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">The gap</span>
+      <h2>{{ $s.problem.heading }}</h2>
+      <p class="section-lede">{{ $s.problem.intro }}</p>
+    </div>
+    <div class="problem-grid">
+      {{ range $s.problem.points }}
+      <article class="problem-card">
+        <div class="problem-number">{{ .number }}</div>
+        <h3>{{ .title }}</h3>
+        <p>{{ .body }}</p>
+      </article>
+      {{ end }}
+    </div>
+  </div>
+</section>
+
+<section id="vision" class="section section-vision">
+  <div class="container">
+    <div class="vision-wrap">
+      <div class="section-head">
+        <span class="section-tag">Vision</span>
+        <h2>{{ $s.vision.heading }}</h2>
+      </div>
+      <p class="vision-body">{{ $s.vision.body }}</p>
+      <div class="mission-card">
+        <span class="mission-label">Mission</span>
+        <p class="mission-text">{{ $s.vision.mission }}</p>
+      </div>
+      <div class="pillars">
+        {{ range $s.positioning.pillars }}
+        <div class="pillar">
+          <h4>{{ .title }}</h4>
+          <p>{{ .body }}</p>
+        </div>
+        {{ end }}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="capabilities" class="section section-capabilities">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">Capabilities</span>
+      <h2>{{ $s.capabilities.heading }}</h2>
+      <p class="section-lede">{{ $s.capabilities.intro }}</p>
+    </div>
+    <div class="capability-stack">
+      {{ range $s.capabilities.items }}
+      <div class="capability">
+        <span class="capability-tag">{{ .tag }}</span>
+        <h3>{{ .title }}</h3>
+        <p>{{ .body }}</p>
+      </div>
+      {{ end }}
+    </div>
+  </div>
+</section>
+
+<section id="use-cases" class="section section-usecases">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">Use cases</span>
+      <h2>{{ $s.useCases.heading }}</h2>
+      <p class="section-lede">{{ $s.useCases.intro }}</p>
+    </div>
+    <div class="usecase-grid">
+      {{ range $s.useCases.items }}
+      <article class="usecase-card">
+        <span class="usecase-number">{{ .number }}</span>
+        <h3>{{ .title }}</h3>
+        <p>{{ .body }}</p>
+      </article>
+      {{ end }}
+    </div>
+  </div>
+</section>
+
+<section id="personas" class="section section-personas">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">Personas</span>
+      <h2>{{ $s.personas.heading }}</h2>
+      <p class="section-lede">{{ $s.personas.intro }}</p>
+    </div>
+    <div class="persona-grid">
+      {{ range $s.personas.clusters }}
+      <article class="persona-card">
+        <span class="persona-tag">{{ .tag }}</span>
+        <h3>{{ .title }}</h3>
+        <p class="persona-focus">{{ .focus }}</p>
+        <ul class="persona-roles">
+          {{ range .roles }}
+          <li>{{ . }}</li>
+          {{ end }}
+        </ul>
+      </article>
+      {{ end }}
+    </div>
+    <div class="buyers">
+      <h3>{{ $s.buyers.heading }}</h3>
+      <dl class="buyers-list">
+        {{ range $s.buyers.rows }}
+        <div><dt>{{ .role }}</dt><dd>{{ .person }}</dd></div>
+        {{ end }}
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section id="closing" class="section section-closing">
+  <div class="container">
+    <div class="closing-card">
+      <span class="section-tag">Roadmap</span>
+      <h2>{{ $s.closing.heading }}</h2>
+      <p>{{ $s.closing.body }}</p>
+      <a href="{{ .Site.Params.githubURL }}" class="btn btn-primary" rel="noopener">Follow on GitHub →</a>
+    </div>
+  </div>
+</section>
+
+{{ end }}

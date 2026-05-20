@@ -1,0 +1,121 @@
+problem:
+  heading: "The problem"
+  intro: "AI agents are now first-class consumers of enterprise data, and MCP is becoming the default protocol that connects them. Existing security tooling does not close three gaps."
+  points:
+    - number: "01"
+      title: "No inventory"
+      body: "Security and IT teams cannot enumerate the MCP servers running in their environment, who deployed them, or what they expose."
+    - number: "02"
+      title: "No governance"
+      body: "There is no policy layer that decides which agents, users, or workloads may invoke which capabilities on which endpoints — let alone one that respects network context."
+    - number: "03"
+      title: "No audit"
+      body: "When an agent exfiltrates data, misuses a credential, or invokes a capability it shouldn't, there is no trail and no enforcement point to stop it."
+
+vision:
+  heading: "Our vision"
+  body: "Bright Guard exists to give enterprises visibility, governance, and enforcement over this new surface — using the network itself (DNS, traffic, workload identity) as the foundational signal. We turn MCP from an ungoverned sprawl into a managed control plane that security, networking, and platform teams can operate together."
+  mission: "Make every MCP endpoint, capability, and interaction in an enterprise discoverable, governable, and enforceable — with a single policy model that applies consistently across cloud, endpoint, and network."
+
+positioning:
+  heading: "Strategic positioning"
+  pillars:
+    - title: "Network-native"
+      body: "DNS and traffic are the primary signals, not agent-side instrumentation."
+    - title: "Policy-first"
+      body: "Discovery and audit serve a policy model, not the other way around."
+    - title: "Environment-unified"
+      body: "One control plane across cloud, Kubernetes, and endpoints."
+
+capabilities:
+  heading: "Core capabilities"
+  intro: "Three capabilities that build on each other."
+  items:
+    - tag: "01 — Visibility"
+      title: "See every MCP endpoint and capability"
+      body: "Discover MCP servers via DNS and traffic, enumerate their capabilities, and track every interaction."
+    - tag: "02 — Governance"
+      title: "Define and enforce policy"
+      body: "Policy by endpoint, capability, user, asset, and network context — enforced where traffic already flows."
+    - tag: "03 — Operational control"
+      title: "Simulate before you ship"
+      body: "Validate policy changes pre-rollout, audit outcomes post-rollout, and enforce consistently across environments."
+
+useCases:
+  heading: "Use cases"
+  intro: "What Bright Guard does, end to end."
+  items:
+    - number: "01"
+      title: "MCP server discovery"
+      body: "Build a continuous catalog of every MCP server in your environment, with DNS as the primary signal and HTTP, proxy, and workload metadata as augmentation."
+    - number: "02"
+      title: "Capability discovery"
+      body: "Enumerate the tools, resources, and prompts each endpoint exposes — so policy is written against what an endpoint actually does."
+    - number: "03"
+      title: "Monitoring & audit trail"
+      body: "Continuous usage telemetry per endpoint, capability, and caller — with a durable audit trail for incident response and compliance."
+    - number: "04"
+      title: "Policy definition & enforcement"
+      body: "Allow, deny, rate-limit, or constrain. Enforce at the network layer, the endpoint agent, or a cloud gateway."
+    - number: "05"
+      title: "Policy simulation"
+      body: "Pre-mortem: predict what a proposed policy would block on real traffic. Post-mortem: report what was blocked and what would have been under alternate rules."
+    - number: "06"
+      title: "Asset- & user-level policy"
+      body: "Bind policies to context — specific users, service identities, workloads, hosts, clusters, agents, and agent classes."
+    - number: "07"
+      title: "Network-aware enforcement"
+      body: "Use subnet, VPC, namespace, or cluster as a first-class policy dimension. Enforce where traffic already flows."
+    - number: "08"
+      title: "Exposure control"
+      body: "Flag internal endpoints exposed to the public internet. Block flows from internal MCP servers to public AI endpoints when policy forbids them."
+    - number: "09"
+      title: "Credential & API-key governance"
+      body: "Detect unauthorized personal API keys. Enforce approved credentials, scopes, and identity providers on governed endpoints."
+    - number: "10"
+      title: "Distributed enforcement"
+      body: "Cloud gateway or endpoint agent — administrators choose. Both modes share one policy model and one audit stream."
+    - number: "11"
+      title: "Unified policy"
+      body: "One policy authored once applies consistently across cloud, Kubernetes, on-prem, and endpoint enforcement points."
+
+personas:
+  heading: "Who it's for"
+  intro: "Three persona clusters, each with a clear focus and buying motion."
+  clusters:
+    - tag: "Cluster A"
+      title: "Infrastructure & Operations"
+      focus: "Discovery, observability, and enforcement deployment."
+      roles:
+        - "IT / Network Administrator"
+        - "DevOps / Platform Engineering"
+    - tag: "Cluster B"
+      title: "Security & Governance"
+      focus: "Policy, risk, compliance, and enforcement outcomes."
+      roles:
+        - "CISO / Security Operations"
+        - "AI Governance / GRC"
+        - "Identity & Access Management"
+    - tag: "Cluster C"
+      title: "Architecture & AI Platform"
+      focus: "Control-plane design, integration, and system behavior."
+      roles:
+        - "Enterprise Architect"
+        - "Application Security / DevSecOps"
+        - "AI / Agent Platform Owner"
+
+buyers:
+  heading: "Who decides"
+  rows:
+    - role: "Economic buyer"
+      person: "CISO / Security leadership"
+    - role: "Technical buyer"
+      person: "Enterprise Architect / Platform Engineering"
+    - role: "Primary operator"
+      person: "Network / DevOps"
+    - role: "Policy owner"
+      person: "GRC / AI Governance"
+
+closing:
+  heading: "Where we're headed"
+  body: "Bright Guard's near-term focus is the foundation — DNS-based discovery, capability enumeration, and an audit trail that gives network and security teams a shared view of MCP in their environment. From that foundation we layer policy, enforcement, and simulation, building toward a single unified AI control plane that spans every environment an enterprise operates."

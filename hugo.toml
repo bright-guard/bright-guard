@@ -1,0 +1,24 @@
+baseURL = "https://bright-guard.github.io/bright-guard/"
+languageCode = "en-us"
+title = "Bright Guard"
+enableRobotsTXT = true
+disableKinds = ["taxonomy", "term", "RSS"]
+
+[params]
+  tagline = "The control plane for AI infrastructure."
+  description = "Bright Guard gives enterprises visibility, governance, and enforcement over MCP — discovering every endpoint, every capability, and every interaction across cloud, endpoint, and network."
+  githubURL = "https://github.com/bright-guard/bright-guard"
+
+[markup]
+  [markup.goldmark.renderer]
+    unsafe = true
+  [markup.highlight]
+    style = "github-dark"
+    noClasses = false
+
+[build]
+  writeStats = false
+
+[minify]
+  disableHTML = false
+  minifyOutput = true

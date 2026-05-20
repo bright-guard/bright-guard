@@ -1,0 +1,18 @@
+<header class="site-header">
+  <div class="container nav">
+    <a href="{{ "/" | relURL }}" class="brand" aria-label="Bright Guard home">
+      <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path d="M16 3 L27 7 V15 C27 22 22 27 16 29 C10 27 5 22 5 15 V7 Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M11 16 L14.5 19.5 L21 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">Bright Guard</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#problem">Problem</a>
+      <a href="#vision">Vision</a>
+      <a href="#use-cases">Use cases</a>
+      <a href="#personas">Who it's for</a>
+      <a href="{{ .Site.Params.githubURL }}" class="nav-cta" rel="noopener">GitHub →</a>
+    </nav>
+  </div>
+</header>
