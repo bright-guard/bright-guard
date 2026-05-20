@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bright-guard/bright-guard/cloud/api/internal/auth"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/chat"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/models"
@@ -36,6 +37,9 @@ type Server struct {
 	Platform    *store.Platform
 	Policies    *store.Policies
 	Dashboard   *store.Dashboard
+	Chat           *store.Chat
+	ChatClient     *chat.Client
+	ChatDispatcher *chat.Dispatcher
 	Scheduler   *scheduler.Scheduler
 	PolicySweep *scheduler.PolicySweeper
 	PolicyEngine *policy.Engine
@@ -159,6 +163,14 @@ func (s *Server) Router() http.Handler {
 			r.Get("/dashboard/timeseries", s.handleDashboardTimeseries)
 			r.Get("/dashboard/highlights", s.handleDashboardHighlights)
 			r.Get("/dashboard/callouts", s.handleDashboardCallouts)
+
+			// In-product chat assistant. Read-only Q&A over the org's MCP /
+			// gateway / caller / activity / policy data.
+			r.Post("/chat/sessions", s.handleCreateChatSession)
+			r.Get("/chat/sessions", s.handleListChatSessions)
+			r.Get("/chat/sessions/{sid}", s.handleGetChatSession)
+			r.Delete("/chat/sessions/{sid}", s.handleDeleteChatSession)
+			r.Post("/chat/sessions/{sid}/messages", s.handlePostChatMessage)
 		})
 
 		// Invitee-facing routes. These are NOT under orgMember because the

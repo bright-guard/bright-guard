@@ -540,3 +540,68 @@ export type DashboardCalloutsResp = {
   flaggedNewCallers: number;
   capabilitiesNoPolicy: number;
 };
+
+// --- Chat agent (in-product assistant) ---
+
+export type ChatRole = "user" | "assistant" | "tool";
+
+export type ChatToolCallTrace = {
+  name: string;
+  input: Record<string, unknown>;
+  durationMs: number;
+  error?: string;
+  outputSize: number;
+};
+
+export type ChatSessionRef = {
+  id: string;
+  title: string;
+  totalTokens: number;
+  createdAt: string;
+  lastMessageAt: string;
+};
+
+export type ChatThreadMessage = {
+  id: string;
+  role: ChatRole;
+  // Raw content parts (Gemini Content.Parts shape). Rendered by the SPA into
+  // bubbles + collapsible tool-call cards.
+  content: unknown;
+  inputTokens: number;
+  outputTokens: number;
+  toolCalls?: ChatToolCallTrace[];
+  createdAt: string;
+};
+
+export type ChatThreadResp = {
+  id: string;
+  title: string;
+  totalTokens: number;
+  messages: ChatThreadMessage[];
+};
+
+export type ChatBudgetStatus = {
+  used: number;
+  budget: number;
+  overBudget: boolean;
+  resetAt: string;
+};
+
+export type ChatPostResp = {
+  sessionId: string;
+  assistant: string;
+  toolCalls: ChatToolCallTrace[];
+  inputTokens: number;
+  outputTokens: number;
+  usage: ChatBudgetStatus;
+  title: string;
+};
+
+export type ChatCreateSessionResp = {
+  id: string;
+  title: string;
+};
+
+export type ChatSessionListResp = {
+  items: ChatSessionRef[];
+};

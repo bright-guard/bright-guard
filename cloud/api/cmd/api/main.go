@@ -15,6 +15,7 @@ import (
 
 	"github.com/bright-guard/bright-guard/cloud/api/internal/api"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/auth"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/chat"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/db"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
@@ -120,6 +121,23 @@ func main() {
 	go policySweep.Run(rootCtx)
 
 	dashboardStore := &store.Dashboard{Pool: pool}
+
+	chatStore := &store.Chat{Pool: pool}
+	chatDispatcher := chat.NewDispatcher(activity, callers, dashboardStore, discovery, gateways, policies)
+	var chatClient *chat.Client
+	if cfg.GCPProject != "" {
+		c, err := chat.NewClient(rootCtx, cfg.GCPProject, cfg.ChatVertexLocation, cfg.ChatModel)
+		if err != nil {
+			log.Printf("chat: vertex client init failed (chat endpoint will return 503): %v", err)
+		} else {
+			chatClient = c
+			log.Printf("chat: vertex client ready (project=%s location=%s model=%s)",
+				cfg.GCPProject, cfg.ChatVertexLocation, cfg.ChatModel)
+		}
+	} else {
+		log.Printf("chat: GOOGLE_CLOUD_PROJECT unset — chat endpoint will return 503")
+	}
+
 	metricsRollupInterval := time.Hour
 	if v := os.Getenv("METRICS_ROLLUP_INTERVAL_MINUTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -167,6 +185,9 @@ func main() {
 		Platform:    platform,
 		Policies:    policies,
 		Dashboard:   dashboardStore,
+		Chat:           chatStore,
+		ChatClient:     chatClient,
+		ChatDispatcher: chatDispatcher,
 		Scheduler:   sched,
 		PolicySweep: policySweep,
 		PolicyEngine: policyEngine,

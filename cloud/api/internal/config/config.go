@@ -26,6 +26,11 @@ type Config struct {
 	GCPEmailLocation string // For email API; defaults to "global"
 	// PlatformAdminSeedEmails are auto-promoted to platform_admins on sign-in.
 	PlatformAdminSeedEmails []string
+	// Chat agent (Vertex AI) settings.
+	ChatModel            string
+	ChatVertexLocation   string
+	ChatDailyTokenBudget int64
+	ChatMaxIterations    int
 }
 
 // Default seed list of platform admins. Used when PLATFORM_ADMIN_SEED_EMAILS
@@ -48,6 +53,27 @@ func FromEnv() (*Config, error) {
 		EmailFrom:        getenv("EMAIL_FROM", "noreply@mcp-governance.infoblox.dev"),
 		GCPProject:       firstNonEmpty(os.Getenv("GCP_PROJECT"), os.Getenv("GOOGLE_CLOUD_PROJECT")),
 		GCPEmailLocation: getenv("GCP_EMAIL_LOCATION", "global"),
+		// Default to Gemini 2.5 Flash on Vertex AI. Override via CHAT_MODEL.
+		ChatModel:          getenv("CHAT_MODEL", "gemini-2.5-flash"),
+		ChatVertexLocation: getenv("VERTEX_LOCATION", "us-central1"),
+	}
+	c.ChatDailyTokenBudget = 100000
+	if v := os.Getenv("CHAT_DAILY_TOKEN_BUDGET"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("CHAT_DAILY_TOKEN_BUDGET: %w", err)
+		}
+		c.ChatDailyTokenBudget = n
+	}
+	c.ChatMaxIterations = 8
+	if v := os.Getenv("CHAT_MAX_ITERATIONS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("CHAT_MAX_ITERATIONS: %w", err)
+		}
+		if n > 0 {
+			c.ChatMaxIterations = n
+		}
 	}
 	if v := os.Getenv("SESSION_COOKIE_SECURE"); v != "" {
 		b, err := strconv.ParseBool(v)
