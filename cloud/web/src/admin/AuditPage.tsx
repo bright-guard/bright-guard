@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { PlatformAuditEntry, PlatformAuditListResp } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { describeError } from "./UsersPage";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminAuditPage() {
   const [rows, setRows] = useState<PlatformAuditEntry[]>([]);
@@ -33,7 +34,10 @@ export default function AdminAuditPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Audit log</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="text-2xl font-semibold">Audit log</h1>
+        <PageHelp slug="admin/platform-console" />
+      </div>
 
       {err && <div className="text-sm text-red-400">{err}</div>}
 

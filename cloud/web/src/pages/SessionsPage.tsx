@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { Session } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -46,7 +47,10 @@ export default function SessionsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Sessions</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Sessions</h1>
+          <PageHelp slug="cli/device-flow" />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Browser sessions and authorized CLIs that can act as you.
         </p>

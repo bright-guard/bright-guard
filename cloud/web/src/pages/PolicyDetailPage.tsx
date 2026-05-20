@@ -9,6 +9,7 @@ import type {
   PolicySimulateResp,
 } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 const ACTION_CHIP: Record<PolicyAction, string> = {
   deny: "bg-rose-100 text-rose-700 border-rose-300",
@@ -109,7 +110,10 @@ export default function PolicyDetailPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">{policy.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">{policy.name}</h1>
+            <PageHelp slug="policies/cel-primer" />
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Created {relativeTime(policy.createdAt)} ·
             <span className={`ml-2 inline-flex rounded-md border px-2 py-0.5 text-xs uppercase ${ACTION_CHIP[policy.action]}`}>

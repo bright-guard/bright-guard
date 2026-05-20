@@ -10,6 +10,7 @@ import type {
 } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { describeError } from "./UsersPage";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminAdminsPage() {
   const { user } = useAuth();
@@ -89,7 +90,10 @@ export default function AdminAdminsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Platform admins</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Platform admins</h1>
+          <PageHelp slug="admin/platform-console" />
+        </div>
         <p className="mt-1 text-sm text-slate-400">
           Active administrators. The last active admin cannot demote themselves.
         </p>

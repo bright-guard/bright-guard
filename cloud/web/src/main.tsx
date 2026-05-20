@@ -35,11 +35,13 @@ import AdminAuditPage from "./admin/AuditPage";
 import { RequirePlatformAdmin } from "./admin/RequirePlatformAdmin";
 import DocsShell, { DocsIndexRedirect } from "./pages/DocsShell";
 import DocsPage from "./pages/DocsPage";
+import { HelpProvider } from "./components/HelpProvider";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
+        <HelpProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/app" replace />} />
           <Route path="/login" element={<LoginPage />} />
@@ -112,6 +114,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           </Route>
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
+        </HelpProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,

@@ -5,8 +5,18 @@ import { useAuth } from "../auth/AuthContext";
 import type { ExposureState, MCPCapability, MCPServerDetail } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { EXPOSURE_BADGE_CLASS, EXPOSURE_LABEL } from "../lib/exposure";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
 
 const KIND_ORDER = ["tool", "resource", "prompt"];
+
+const EXPOSURE_TERM: Record<ExposureState, string> = {
+  public: "public_exposure",
+  cloud_internal: "cloud_internal_exposure",
+  internal: "internal_exposure",
+  unreachable: "unreachable_exposure",
+  unknown: "unknown_exposure",
+};
 
 export default function MCPServerDetailPage() {
   const { id } = useParams();
@@ -81,7 +91,10 @@ export default function MCPServerDetailPage() {
           </Link>{" "}
           / {detail.name}
         </div>
-        <h1 className="mt-1 text-2xl font-semibold">{detail.name}</h1>
+        <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+          {detail.name}
+          <PageHelp slug="activity-timeline" />
+        </h1>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -250,11 +263,13 @@ function Field({ label, value }: { label: string; value: string }) {
 
 function ExposureBadge({ state }: { state: ExposureState }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${EXPOSURE_BADGE_CLASS[state]}`}
-    >
-      {EXPOSURE_LABEL[state]}
-    </span>
+    <HelpTooltip term={EXPOSURE_TERM[state]}>
+      <span
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${EXPOSURE_BADGE_CLASS[state]}`}
+      >
+        {EXPOSURE_LABEL[state]}
+      </span>
+    </HelpTooltip>
   );
 }
 

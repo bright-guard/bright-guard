@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { Invitation } from "../api/types";
+import PageHelp from "../components/PageHelp";
 
 export default function InvitationPage() {
   const { id } = useParams<{ id: string }>();
@@ -75,7 +76,10 @@ export default function InvitationPage() {
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-16">
       <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
-        <h1 className="mb-1 text-2xl font-semibold">Organization invitation</h1>
+        <div className="mb-1 flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Organization invitation</h1>
+          <PageHelp slug="getting-started" />
+        </div>
         {loading && (
           <p className="text-sm text-slate-500">Loading…</p>
         )}

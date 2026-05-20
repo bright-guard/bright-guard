@@ -7,6 +7,7 @@ import type {
   OrgRole,
 } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 type ErrBody = { error?: { code?: string; message?: string } };
 
@@ -104,7 +105,10 @@ export default function MembersPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Members</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Members</h1>
+          <PageHelp slug="getting-started" />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Manage who has access to {active?.org.name ?? "this org"}.
         </p>

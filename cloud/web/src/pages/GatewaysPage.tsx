@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { Gateway, GatewayCreateResp } from "../api/types";
 import { isOnline, relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 export default function GatewaysPage() {
   const { activeOrgId } = useAuth();
@@ -31,7 +32,10 @@ export default function GatewaysPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Gateways</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">Gateways</h1>
+            <PageHelp slug="gateways/install" />
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Hosts running the Bright Guard shim that report to this org.
           </p>

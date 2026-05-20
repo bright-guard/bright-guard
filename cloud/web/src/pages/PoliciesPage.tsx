@@ -4,6 +4,8 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { Policy, PolicyAction } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
 
 const ACTION_CHIP: Record<PolicyAction, string> = {
   deny: "bg-rose-950/60 text-rose-300 border-rose-700/60",
@@ -70,9 +72,12 @@ export default function PoliciesPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Policies</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">Policies</h1>
+            <PageHelp slug="policies/cel-primer" />
+          </div>
           <p className="mt-1 text-sm text-slate-400">
-            CEL expressions evaluated against observed MCP invocations. Audit-mode —
+            <HelpTooltip term="cel">CEL</HelpTooltip> expressions evaluated against observed MCP invocations. Audit-mode —
             matching invocations are flagged in Activity but never blocked.
           </p>
         </div>

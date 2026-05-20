@@ -7,6 +7,7 @@ import type {
   PlatformAuditListResp,
 } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminOverviewPage() {
   const [o, setO] = useState<PlatformOverview | null>(null);
@@ -29,7 +30,10 @@ export default function AdminOverviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Platform Overview</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Platform Overview</h1>
+          <PageHelp slug="admin/platform-console" />
+        </div>
         <p className="mt-1 text-sm text-slate-400">
           Cross-tenant aggregate metrics. All counts are global.
         </p>

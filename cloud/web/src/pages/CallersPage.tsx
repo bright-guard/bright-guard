@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { OrgCaller, OrgCallerListResp } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
 
 type FilterMode = "all" | "new";
 
@@ -87,7 +89,10 @@ export default function CallersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Callers</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Callers</h1>
+          <PageHelp slug="activity-timeline" anchor="caller-identity" />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Distinct AI agents and identities observed invoking MCP servers in this org.
         </p>
@@ -169,9 +174,11 @@ export default function CallersPage() {
                   >
                     <span>{r.label || "(anonymous)"}</span>
                     {r.flaggedNew && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-800">
-                        NEW
-                      </span>
+                      <HelpTooltip term="new_caller">
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-800">
+                          NEW
+                        </span>
+                      </HelpTooltip>
                     )}
                   </Link>
                   <div

@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { OrgCallerDetail } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
 
 function statusClasses(status: string): string {
   switch (status) {
@@ -81,10 +83,13 @@ export default function CallerDetailPage() {
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
             {data.label || "(anonymous)"}
             {data.flaggedNew && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-800">
-                new
-              </span>
+              <HelpTooltip term="new_caller">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-800">
+                  new
+                </span>
+              </HelpTooltip>
             )}
+            <PageHelp slug="activity-timeline" anchor="caller-identity" />
           </h1>
           <p
             className="mt-1 font-mono text-xs text-slate-500"

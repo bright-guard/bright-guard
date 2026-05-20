@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { GatewayDetail } from "../api/types";
 import { isOnline, relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 export default function GatewayDetailPage() {
   const { id } = useParams();
@@ -51,6 +52,7 @@ export default function GatewayDetailPage() {
               }`}
             />
             {gateway.name}
+            <PageHelp slug="gateways/install" />
           </h1>
         </div>
         {gateway.status !== "revoked" && (

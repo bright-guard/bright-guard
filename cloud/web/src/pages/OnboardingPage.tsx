@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth, type Org } from "../auth/AuthContext";
+import PageHelp from "../components/PageHelp";
 
 export default function OnboardingPage() {
   const { user, refresh } = useAuth();
@@ -39,7 +40,10 @@ export default function OnboardingPage() {
           Signed in as{" "}
           <span className="text-slate-900">{user?.email}</span>
         </div>
-        <h1 className="mb-1 text-2xl font-semibold">Create your organization</h1>
+        <div className="mb-1 flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Create your organization</h1>
+          <PageHelp slug="getting-started" />
+        </div>
         <p className="mb-6 text-sm text-slate-500">
           You'll be the owner. You can invite teammates later.
         </p>

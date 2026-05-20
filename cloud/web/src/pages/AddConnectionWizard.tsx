@@ -7,6 +7,7 @@ import type {
   MCPConnectionTransport,
   OAuthConfigInput,
 } from "../api/types";
+import PageHelp from "../components/PageHelp";
 
 type OAuthMode = "auto" | "manual";
 
@@ -243,7 +244,10 @@ export default function AddConnectionWizard({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Add MCP connection</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">Add MCP connection</h2>
+            <PageHelp slug="connections/adding-an-mcp-connection" />
+          </div>
           <div className="text-xs text-slate-500">Step {step} of 3</div>
         </div>
 

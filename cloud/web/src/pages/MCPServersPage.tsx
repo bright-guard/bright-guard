@@ -10,6 +10,16 @@ import {
   EXPOSURE_LABEL,
   EXPOSURE_STATES,
 } from "../lib/exposure";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
+
+const EXPOSURE_TERM: Record<ExposureState, string> = {
+  public: "public_exposure",
+  cloud_internal: "cloud_internal_exposure",
+  internal: "internal_exposure",
+  unreachable: "unreachable_exposure",
+  unknown: "unknown_exposure",
+};
 
 type Filter = ExposureState | "all";
 
@@ -49,7 +59,10 @@ export default function MCPServersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">MCP Servers</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">MCP Servers</h1>
+          <PageHelp slug="activity-timeline" />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Every MCP server reported by one of your gateways.
         </p>
@@ -168,10 +181,12 @@ function FilterChip({
 
 function ExposureBadge({ state }: { state: ExposureState }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${EXPOSURE_BADGE_CLASS[state]}`}
-    >
-      {EXPOSURE_LABEL[state]}
-    </span>
+    <HelpTooltip term={EXPOSURE_TERM[state]}>
+      <span
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${EXPOSURE_BADGE_CLASS[state]}`}
+      >
+        {EXPOSURE_LABEL[state]}
+      </span>
+    </HelpTooltip>
   );
 }

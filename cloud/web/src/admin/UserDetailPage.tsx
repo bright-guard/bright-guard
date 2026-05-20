@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { PlatformUserDetail } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { describeError } from "./UsersPage";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminUserDetailPage() {
   const { id = "" } = useParams();
@@ -71,7 +72,10 @@ export default function AdminUserDetailPage() {
           <Link to="/admin/users" className="text-xs text-red-300 hover:underline">
             ← All users
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">{u.email}</h1>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+            {u.email}
+            <PageHelp slug="admin/platform-console" />
+          </h1>
           <div className="text-sm text-slate-400">{u.displayName || "(no name)"}</div>
         </div>
         <div className="flex flex-wrap gap-2">

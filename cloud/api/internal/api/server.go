@@ -35,6 +35,7 @@ type Server struct {
 	Email       email.Sender
 	Platform    *store.Platform
 	Policies    *store.Policies
+	Dashboard   *store.Dashboard
 	Scheduler   *scheduler.Scheduler
 	PolicySweep *scheduler.PolicySweeper
 	PolicyEngine *policy.Engine
@@ -153,6 +154,11 @@ func (s *Server) Router() http.Handler {
 				r.Post("/invitations", s.handleCreateInvitation)
 				r.Delete("/invitations/{id}", s.handleRevokeInvitation)
 			})
+
+			r.Get("/dashboard/kpis", s.handleDashboardKPIs)
+			r.Get("/dashboard/timeseries", s.handleDashboardTimeseries)
+			r.Get("/dashboard/highlights", s.handleDashboardHighlights)
+			r.Get("/dashboard/callouts", s.handleDashboardCallouts)
 		})
 
 		// Invitee-facing routes. These are NOT under orgMember because the

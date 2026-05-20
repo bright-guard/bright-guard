@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { PlatformOrgDetail } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { describeError } from "./UsersPage";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminOrgDetailPage() {
   const { id = "" } = useParams();
@@ -65,7 +66,10 @@ export default function AdminOrgDetailPage() {
           <Link to="/admin/orgs" className="text-xs text-red-300 hover:underline">
             ← All orgs
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">{o.name}</h1>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+            {o.name}
+            <PageHelp slug="admin/platform-console" />
+          </h1>
           <div className="text-sm text-slate-400">{o.slug}</div>
         </div>
         <div className="flex flex-wrap gap-2">

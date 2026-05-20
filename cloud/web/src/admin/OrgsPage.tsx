@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { PlatformOrg, PlatformOrgListResp } from "../api/types";
 import { relativeTime } from "../lib/time";
 import { describeError } from "./UsersPage";
+import PageHelp from "../components/PageHelp";
 
 export default function AdminOrgsPage() {
   const [q, setQ] = useState("");
@@ -40,7 +41,10 @@ export default function AdminOrgsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Orgs</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Orgs</h1>
+          <PageHelp slug="admin/platform-console" />
+        </div>
         <input
           className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-red-500 focus:outline-none"
           placeholder="Search name or slug"

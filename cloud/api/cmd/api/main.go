@@ -119,6 +119,16 @@ func main() {
 	policySweep := scheduler.NewPolicySweeper(policies, connections, policyEngine, 30*time.Second)
 	go policySweep.Run(rootCtx)
 
+	dashboardStore := &store.Dashboard{Pool: pool}
+	metricsRollupInterval := time.Hour
+	if v := os.Getenv("METRICS_ROLLUP_INTERVAL_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			metricsRollupInterval = time.Duration(n) * time.Minute
+		}
+	}
+	metricsRollup := scheduler.NewMetricsRollup(connections, dashboardStore, metricsRollupInterval)
+	go metricsRollup.Run(rootCtx)
+
 	cookieOpt := auth.CookieOpts{
 		Secure:   cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
@@ -156,6 +166,7 @@ func main() {
 		Email:       mailer,
 		Platform:    platform,
 		Policies:    policies,
+		Dashboard:   dashboardStore,
 		Scheduler:   sched,
 		PolicySweep: policySweep,
 		PolicyEngine: policyEngine,

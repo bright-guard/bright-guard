@@ -8,6 +8,8 @@ import type {
   ActivitySummary,
 } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
+import HelpTooltip from "../components/HelpTooltip";
 
 type Window = "1h" | "24h" | "7d";
 const WINDOWS: { id: Window; label: string; ms: number }[] = [
@@ -171,7 +173,10 @@ export default function ActivityPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Activity</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Activity</h1>
+          <PageHelp slug="activity-timeline" />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Org-wide timeline of MCP invocations.
         </p>
@@ -280,12 +285,14 @@ export default function ActivityPage() {
                   {r.capabilityName}
                 </td>
                 <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${statusClasses(r.status)}`}
-                    title={statusTitle(r.status)}
-                  >
-                    {statusLabel(r.status)}
-                  </span>
+                  <HelpTooltip term={r.status === "denied" ? "denied" : "audit"}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${statusClasses(r.status)}`}
+                      title={statusTitle(r.status)}
+                    >
+                      {statusLabel(r.status)}
+                    </span>
+                  </HelpTooltip>
                   {r.decisions?.map((d) => {
                     const enforced =
                       r.status === "denied" && d.action === "deny";
@@ -305,10 +312,18 @@ export default function ActivityPage() {
                               } by policy "${d.policyName}"`
                         }
                       >
-                        {enforced && (
-                          <span className="rounded bg-rose-700 px-1 py-px text-[8px] font-semibold text-white">
-                            ENFORCED
-                          </span>
+                        {enforced ? (
+                          <HelpTooltip term="enforced">
+                            <span className="rounded bg-rose-700 px-1 py-px text-[8px] font-semibold text-white">
+                              ENFORCED
+                            </span>
+                          </HelpTooltip>
+                        ) : (
+                          <HelpTooltip term="warn">
+                            <span className="rounded bg-amber-200 px-1 py-px text-[8px] font-semibold uppercase text-amber-900">
+                              {d.action}
+                            </span>
+                          </HelpTooltip>
                         )}
                         by {d.policyName}
                       </span>

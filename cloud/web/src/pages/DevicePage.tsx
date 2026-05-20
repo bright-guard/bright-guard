@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { DeviceLookup } from "../api/types";
+import PageHelp from "../components/PageHelp";
 
 type Phase = "input" | "loading" | "confirm" | "approved" | "denied" | "error";
 
@@ -108,7 +109,10 @@ export default function DevicePage() {
       </header>
       <main className="mx-auto grid max-w-md place-items-center px-4 py-16">
         <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-          <h1 className="text-xl font-semibold">Authorize a device</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold">Authorize a device</h1>
+            <PageHelp slug="cli/device-flow" />
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Connect a CLI or other client to your Bright Guard account.
           </p>

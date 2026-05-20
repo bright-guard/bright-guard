@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { AuthorizeResp, MCPConnection, OAuthStatus } from "../api/types";
 import { relativeTime } from "../lib/time";
+import PageHelp from "../components/PageHelp";
 
 const OAUTH_LABEL: Record<Exclude<OAuthStatus, "">, string> = {
   pending_authorize: "Pending authorization",
@@ -81,7 +82,10 @@ export default function ConnectionDetailPage() {
           >
             ← All connections
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">{conn.name}</h1>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+            {conn.name}
+            <PageHelp slug="connections/adding-an-mcp-connection" />
+          </h1>
           <div className="mt-1 font-mono text-xs text-slate-500">{conn.endpointUrl}</div>
         </div>
       </div>

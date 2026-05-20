@@ -458,3 +458,85 @@ export type PolicySimulateResp = {
   from: string;
   to: string;
 };
+
+// --- Executive dashboard (Overview page) ---
+
+export type DashboardRange = "7d" | "30d" | "90d";
+
+export type DashboardKpiTile = {
+  key:
+    | "posture"
+    | "footprint"
+    | "invocations"
+    | "denials"
+    | "publicExposure"
+    | "activeCallers";
+  current: number;
+  prior: number;
+  deltaPercent: number;
+  higherIsBetter: boolean;
+  sparkline: number[];
+  extra?: Record<string, number | string>;
+};
+
+export type DashboardKpisResp = {
+  rangeDays: number;
+  from: string;
+  to: string;
+  tiles: DashboardKpiTile[];
+  updatedAt: string;
+};
+
+export type DashboardTimeseriesPoint = {
+  day: string;
+  allowed?: number;
+  audited?: number;
+  denied?: number;
+  value?: number;
+};
+
+export type DashboardTimeseriesResp = {
+  metric: string;
+  rangeDays: number;
+  from: string;
+  to: string;
+  series: DashboardTimeseriesPoint[];
+};
+
+export type DashboardTopCapability = {
+  capabilityKind: string;
+  capabilityName: string;
+  serverName: string;
+  count: number;
+};
+
+export type DashboardTopCaller = {
+  signature: string;
+  label: string;
+  caller: Record<string, unknown>;
+  count: number;
+};
+
+export type DashboardRecentDenied = {
+  id: string;
+  at: string;
+  serverName: string;
+  capabilityKind: string;
+  capabilityName: string;
+  caller: Record<string, unknown>;
+};
+
+export type DashboardHighlightsResp = {
+  from: string;
+  to: string;
+  rangeDays: number;
+  topCapabilities: DashboardTopCapability[];
+  topCallers: DashboardTopCaller[];
+  recentDenied: DashboardRecentDenied[];
+};
+
+export type DashboardCalloutsResp = {
+  publicExposureServers: number;
+  flaggedNewCallers: number;
+  capabilitiesNoPolicy: number;
+};

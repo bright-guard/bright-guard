@@ -9,6 +9,7 @@ import type {
 } from "../api/types";
 import { relativeTime } from "../lib/time";
 import AddConnectionWizard from "./AddConnectionWizard";
+import PageHelp from "../components/PageHelp";
 
 const STATUS_STYLES: Record<MCPConnection["status"], string> = {
   healthy: "bg-emerald-400",
@@ -152,7 +153,10 @@ export default function ConnectionsPage() {
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">MCP Connections</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">MCP Connections</h1>
+            <PageHelp slug="connections/adding-an-mcp-connection" />
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Direct connections to remote MCP servers — no gateway required.
           </p>
