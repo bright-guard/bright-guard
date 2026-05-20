@@ -77,6 +77,7 @@ func (s *Server) gatewayBearer(next http.Handler) http.Handler {
 			return
 		}
 		_ = s.Gateways.TouchSeen(r.Context(), gw.ID)
+		_ = s.Gateways.CommitEnrollmentOnHeartbeat(r.Context(), gw.ID)
 		ctx := context.WithValue(r.Context(), ctxKeyGateway, gw)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

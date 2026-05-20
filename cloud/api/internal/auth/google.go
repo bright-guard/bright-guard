@@ -18,7 +18,7 @@ import (
 
 type Google struct {
 	cfg       *config.Config
-	oauth     *oauth2.Config
+	endpoint  oauth2.Endpoint
 	verifier  *oidc.IDTokenVerifier
 	users     *store.Users
 	orgs      *store.Orgs
@@ -41,17 +41,10 @@ func NewGoogle(
 	if err != nil {
 		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
-	oauthCfg := &oauth2.Config{
-		ClientID:     cfg.GoogleClientID,
-		ClientSecret: cfg.GoogleSecret,
-		RedirectURL:  cfg.AppBaseURL + "/auth/google/callback",
-		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
-	}
 	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.GoogleClientID})
 	return &Google{
 		cfg:       cfg,
-		oauth:     oauthCfg,
+		endpoint:  provider.Endpoint(),
 		verifier:  verifier,
 		users:     users,
 		orgs:      orgs,
@@ -60,7 +53,34 @@ func NewGoogle(
 	}, nil
 }
 
+// redirectURIFor returns the OAuth callback URI for the inbound request, scoped
+// to the same host the user is currently on so the state cookie matches.
+// Scheme is always https — Cloud Run / production must terminate TLS.
+func (g *Google) redirectURIFor(r *http.Request) (string, bool) {
+	host := r.Host
+	if !g.cfg.IsAllowedHost(host) {
+		return "", false
+	}
+	return "https://" + host + "/auth/google/callback", true
+}
+
+// oauthConfigFor builds a per-request *oauth2.Config bound to the request's host.
+func (g *Google) oauthConfigFor(redirectURI string) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     g.cfg.GoogleClientID,
+		ClientSecret: g.cfg.GoogleSecret,
+		RedirectURL:  redirectURI,
+		Endpoint:     g.endpoint,
+		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+	}
+}
+
 func (g *Google) StartHandler(w http.ResponseWriter, r *http.Request) {
+	redirectURI, ok := g.redirectURIFor(r)
+	if !ok {
+		http.Error(w, "host not allowed", http.StatusBadRequest)
+		return
+	}
 	state, err := randState(32)
 	if err != nil {
 		http.Error(w, "could not generate state", http.StatusInternalServerError)
@@ -75,11 +95,17 @@ func (g *Google) StartHandler(w http.ResponseWriter, r *http.Request) {
 		Secure:   g.cookieOpt.Secure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, g.oauth.AuthCodeURL(state, oauth2.AccessTypeOnline), http.StatusFound)
+	oauthCfg := g.oauthConfigFor(redirectURI)
+	http.Redirect(w, r, oauthCfg.AuthCodeURL(state, oauth2.AccessTypeOnline), http.StatusFound)
 }
 
 func (g *Google) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	redirectURI, ok := g.redirectURIFor(r)
+	if !ok {
+		http.Error(w, "host not allowed", http.StatusBadRequest)
+		return
+	}
 	stateCookie, err := r.Cookie(stateCookieName)
 	if err != nil {
 		http.Error(w, "missing state cookie", http.StatusBadRequest)
@@ -104,7 +130,8 @@ func (g *Google) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing code", http.StatusBadRequest)
 		return
 	}
-	tok, err := g.oauth.Exchange(ctx, code)
+	oauthCfg := g.oauthConfigFor(redirectURI)
+	tok, err := oauthCfg.Exchange(ctx, code)
 	if err != nil {
 		http.Error(w, "token exchange failed", http.StatusBadGateway)
 		return

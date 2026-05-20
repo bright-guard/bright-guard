@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -16,6 +18,7 @@ type Config struct {
 	GoogleClientID   string
 	GoogleSecret     string
 	DevLoginEnabled  bool
+	AllowedHosts     []string
 }
 
 func FromEnv() (*Config, error) {
@@ -62,12 +65,57 @@ func FromEnv() (*Config, error) {
 	if len(c.SessionSecret) < 32 {
 		return nil, fmt.Errorf("SESSION_SECRET must be at least 32 characters")
 	}
+
+	c.AllowedHosts = parseAllowedHosts(os.Getenv("ALLOWED_HOSTS"), c.AppBaseURL)
 	return c, nil
 }
 
 // GoogleConfigured reports whether Google OAuth credentials are present.
 func (c *Config) GoogleConfigured() bool {
 	return c.GoogleClientID != "" && c.GoogleSecret != ""
+}
+
+// IsAllowedHost reports whether h matches one of the configured AllowedHosts.
+// Host port is compared as-is; "example.com" and "example.com:443" differ.
+func (c *Config) IsAllowedHost(h string) bool {
+	if h == "" {
+		return false
+	}
+	for _, allowed := range c.AllowedHosts {
+		if allowed == h {
+			return true
+		}
+	}
+	return false
+}
+
+// parseAllowedHosts returns a normalized list of allowed hosts. If env is empty,
+// it falls back to the host parsed from appBaseURL.
+func parseAllowedHosts(env, appBaseURL string) []string {
+	out := []string{}
+	for _, p := range strings.Split(env, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		if h := parseHost(appBaseURL); h != "" {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+func parseHost(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func getenv(k, def string) string {

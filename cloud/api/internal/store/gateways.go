@@ -143,6 +143,11 @@ func (g *Gateways) IssueEnrollmentToken(ctx context.Context, gateway *models.Gat
 	return plaintext, nil
 }
 
+// ClaimEnrollmentToken mints a gateway credential but does NOT finalize the
+// claim — claimed_at stays null until the gateway successfully heartbeats with
+// its issued credential (see CommitEnrollmentOnHeartbeat). If a prior issue
+// failed to land on a shim (no heartbeat), we revoke the abandoned credential
+// and mint a fresh one so the user can retry the install.
 func (g *Gateways) ClaimEnrollmentToken(ctx context.Context, plaintext string) (*models.Gateway, string, error) {
 	tokenHash := g.hash(plaintext)
 	tx, err := g.Pool.Begin(ctx)
@@ -152,16 +157,18 @@ func (g *Gateways) ClaimEnrollmentToken(ctx context.Context, plaintext string) (
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	var (
-		tokenID    uuid.UUID
-		gatewayID  uuid.UUID
-		expiresAt  time.Time
-		claimedAt  *time.Time
+		tokenID            uuid.UUID
+		gatewayID          uuid.UUID
+		expiresAt          time.Time
+		claimedAt          *time.Time
+		commitPending      bool
+		issuedCredentialID *uuid.UUID
 	)
 	const sel = `
-		select id, gateway_id, expires_at, claimed_at
+		select id, gateway_id, expires_at, claimed_at, commit_pending, issued_credential_id
 		from gateway_enrollment_tokens
 		where token_hash = $1`
-	err = tx.QueryRow(ctx, sel, tokenHash).Scan(&tokenID, &gatewayID, &expiresAt, &claimedAt)
+	err = tx.QueryRow(ctx, sel, tokenHash).Scan(&tokenID, &gatewayID, &expiresAt, &claimedAt, &commitPending, &issuedCredentialID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", ErrInvalidToken
 	}
@@ -173,11 +180,6 @@ func (g *Gateways) ClaimEnrollmentToken(ctx context.Context, plaintext string) (
 	}
 	if time.Now().After(expiresAt) {
 		return nil, "", ErrTokenExpired
-	}
-
-	const claim = `update gateway_enrollment_tokens set claimed_at = now() where id = $1`
-	if _, err := tx.Exec(ctx, claim, tokenID); err != nil {
-		return nil, "", err
 	}
 
 	gw := &models.Gateway{}
@@ -193,30 +195,59 @@ func (g *Gateways) ClaimEnrollmentToken(ctx context.Context, plaintext string) (
 		return nil, "", ErrInvalidToken
 	}
 
+	// A prior claim that has already led to a successful heartbeat is final —
+	// commit_pending will be cleared by CommitEnrollmentOnHeartbeat, but defend
+	// against re-claim after heartbeat in case claimed_at fixup raced.
+	if commitPending && gw.LastSeenAt != nil {
+		return nil, "", ErrTokenAlreadyUsed
+	}
+
+	// Re-claim path: revoke the abandoned credential before minting a new one.
+	if commitPending && issuedCredentialID != nil {
+		const rev = `update gateway_credentials set revoked_at = now() where id = $1 and revoked_at is null`
+		if _, err := tx.Exec(ctx, rev, *issuedCredentialID); err != nil {
+			return nil, "", err
+		}
+	}
+
 	secret, err := randHex(32)
 	if err != nil {
 		return nil, "", err
 	}
 	plainCred := "bg_gw_" + gw.ID.String() + "." + secret
 	credHash := g.hash(plainCred)
-	const insCred = `insert into gateway_credentials (gateway_id, secret_hash) values ($1, $2)`
-	if _, err := tx.Exec(ctx, insCred, gw.ID, credHash); err != nil {
+	var newCredID uuid.UUID
+	const insCred = `insert into gateway_credentials (gateway_id, secret_hash) values ($1, $2) returning id`
+	if err := tx.QueryRow(ctx, insCred, gw.ID, credHash).Scan(&newCredID); err != nil {
 		return nil, "", err
 	}
 
-	// Mark gateway online once it claims its credential.
-	const status = `update gateways set status = 'online', last_seen_at = now() where id = $1`
-	if _, err := tx.Exec(ctx, status, gw.ID); err != nil {
+	const markPending = `
+		update gateway_enrollment_tokens
+		   set commit_pending = true, issued_credential_id = $2
+		 where id = $1`
+	if _, err := tx.Exec(ctx, markPending, tokenID, newCredID); err != nil {
 		return nil, "", err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, "", err
 	}
-	gw.Status = "online"
-	now := time.Now()
-	gw.LastSeenAt = &now
 	return gw, plainCred, nil
+}
+
+// CommitEnrollmentOnHeartbeat finalizes any pending enrollment for this gateway.
+// Idempotent: safe to call on every heartbeat.
+func (g *Gateways) CommitEnrollmentOnHeartbeat(ctx context.Context, gatewayID uuid.UUID) error {
+	const q = `
+		update gateway_enrollment_tokens
+		   set claimed_at = now(), commit_pending = false
+		 where commit_pending = true
+		   and issued_credential_id in (
+		       select id from gateway_credentials where gateway_id = $1
+		   )`
+	_, err := g.Pool.Exec(ctx, q, gatewayID)
+	return err
 }
 
 func (g *Gateways) AuthenticateCredential(ctx context.Context, plaintext string) (*models.Gateway, error) {
