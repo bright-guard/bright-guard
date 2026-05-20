@@ -349,12 +349,16 @@ func (p *Policies) ListInvocationsForSweep(
 ) ([]InvocationContext, error) {
 	const q = `
 		select i.id, i.org_id, i.at, i.status, i.caller,
-		       s.name, s.transport, s.address, s.exposure_state,
+		       s.id::text, s.name, s.transport, s.address, s.exposure_state,
 		       i.capability_kind, i.capability_name,
-		       coalesce(c.description, '')
+		       coalesce(c.description, ''),
+		       coalesce(oc.signature, ''), coalesce(oc.label, ''),
+		       coalesce(oc.flagged_new, false),
+		       (oc.acknowledged_at is not null)
 		from mcp_invocations i
 		join mcp_servers s on s.id = i.mcp_server_id
 		left join mcp_capabilities c on c.id = i.capability_id
+		left join org_callers oc on oc.org_id = i.org_id and oc.caller = i.caller
 		where i.org_id = $1 and i.at > $2
 		  and not exists (
 		    select 1 from mcp_invocation_decisions d where d.invocation_id = i.id
@@ -372,22 +376,32 @@ func (p *Policies) ListInvocationsForSweep(
 			Server:     map[string]string{},
 			Capability: map[string]string{},
 		}
-		var sName, sTrans, sAddr, sExp string
+		var sID, sName, sTrans, sAddr, sExp string
 		var capKind, capName, capDesc string
+		var cSig, cLabel string
+		var cFlagged, cAck bool
 		if err := rows.Scan(
 			&ic.ID, &ic.OrgID, &ic.At, &ic.Status, &ic.Caller,
-			&sName, &sTrans, &sAddr, &sExp,
+			&sID, &sName, &sTrans, &sAddr, &sExp,
 			&capKind, &capName, &capDesc,
+			&cSig, &cLabel, &cFlagged, &cAck,
 		); err != nil {
 			return nil, err
 		}
+		ic.Server["id"] = sID
 		ic.Server["name"] = sName
 		ic.Server["transport"] = sTrans
 		ic.Server["address"] = sAddr
 		ic.Server["exposureState"] = sExp
+		ic.Server["exposure_state"] = sExp
 		ic.Capability["kind"] = capKind
 		ic.Capability["name"] = capName
 		ic.Capability["description"] = capDesc
+		// Enrich the caller JSON with signature/label/flagged_new/acknowledged
+		// so the CEL env exposes them as first-class fields. Done in-place on
+		// a decoded copy so the original raw JSON survives for sites that
+		// only need the inbound caller payload.
+		ic.Caller = enrichCallerForCEL(ic.Caller, cSig, cLabel, cFlagged, cAck)
 		out = append(out, ic)
 	}
 	return out, rows.Err()
@@ -401,12 +415,16 @@ func (p *Policies) ListInvocationsInWindow(
 ) ([]InvocationContext, error) {
 	const q = `
 		select i.id, i.org_id, i.at, i.status, i.caller,
-		       s.name, s.transport, s.address, s.exposure_state,
+		       s.id::text, s.name, s.transport, s.address, s.exposure_state,
 		       i.capability_kind, i.capability_name,
-		       coalesce(c.description, '')
+		       coalesce(c.description, ''),
+		       coalesce(oc.signature, ''), coalesce(oc.label, ''),
+		       coalesce(oc.flagged_new, false),
+		       (oc.acknowledged_at is not null)
 		from mcp_invocations i
 		join mcp_servers s on s.id = i.mcp_server_id
 		left join mcp_capabilities c on c.id = i.capability_id
+		left join org_callers oc on oc.org_id = i.org_id and oc.caller = i.caller
 		where i.org_id = $1 and i.at >= $2 and i.at < $3
 		order by i.at desc
 		limit $4`
@@ -421,25 +439,59 @@ func (p *Policies) ListInvocationsInWindow(
 			Server:     map[string]string{},
 			Capability: map[string]string{},
 		}
-		var sName, sTrans, sAddr, sExp string
+		var sID, sName, sTrans, sAddr, sExp string
 		var capKind, capName, capDesc string
+		var cSig, cLabel string
+		var cFlagged, cAck bool
 		if err := rows.Scan(
 			&ic.ID, &ic.OrgID, &ic.At, &ic.Status, &ic.Caller,
-			&sName, &sTrans, &sAddr, &sExp,
+			&sID, &sName, &sTrans, &sAddr, &sExp,
 			&capKind, &capName, &capDesc,
+			&cSig, &cLabel, &cFlagged, &cAck,
 		); err != nil {
 			return nil, err
 		}
+		ic.Server["id"] = sID
 		ic.Server["name"] = sName
 		ic.Server["transport"] = sTrans
 		ic.Server["address"] = sAddr
 		ic.Server["exposureState"] = sExp
+		ic.Server["exposure_state"] = sExp
 		ic.Capability["kind"] = capKind
 		ic.Capability["name"] = capName
 		ic.Capability["description"] = capDesc
+		ic.Caller = enrichCallerForCEL(ic.Caller, cSig, cLabel, cFlagged, cAck)
 		out = append(out, ic)
 	}
 	return out, rows.Err()
+}
+
+// enrichCallerForCEL merges signature/label/flagged_new/acknowledged into the
+// raw caller jsonb so the CEL env exposes them as first-class fields under
+// `caller`. The original keys are preserved when present (the inbound payload
+// already had them); enrichment is additive.
+func enrichCallerForCEL(raw json.RawMessage, sig, label string, flagged, acknowledged bool) json.RawMessage {
+	m := map[string]any{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &m)
+	}
+	if _, ok := m["signature"]; !ok && sig != "" {
+		m["signature"] = sig
+	}
+	if _, ok := m["label"]; !ok && label != "" {
+		m["label"] = label
+	}
+	if _, ok := m["flagged_new"]; !ok {
+		m["flagged_new"] = flagged
+	}
+	if _, ok := m["acknowledged"]; !ok {
+		m["acknowledged"] = acknowledged
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // join is a tiny strings.Join shim local to this file so we don't grow the

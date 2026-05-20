@@ -68,7 +68,7 @@ func TestEvaluatePolicies_DenyMatchEmits(t *testing.T) {
 	}
 	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
 		caller:     map[string]any{"agent": "demo-agent"},
-		server:     map[string]string{"name": "github-mcp"},
+		server:     map[string]any{"name": "github-mcp"},
 		capability: map[string]string{"kind": "tool", "name": "create_issue"},
 		at:         time.Now().UTC(),
 		status:     "ok",
@@ -91,7 +91,7 @@ func TestEvaluatePolicies_MissEmitsNothing(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
-		server:     map[string]string{"name": "gitlab-mcp"},
+		server:     map[string]any{"name": "gitlab-mcp"},
 		capability: map[string]string{"name": "create_issue"},
 	})
 	if len(decs) != 0 {
@@ -115,7 +115,7 @@ func TestEvaluatePolicies_WarnAndDenyBothEmit(t *testing.T) {
 		t.Fatalf("compile warn: %v", err)
 	}
 	decs := evaluatePolicies([]compiledPolicy{deny, warn}, evalContext{
-		server:     map[string]string{"name": "github-mcp"},
+		server:     map[string]any{"name": "github-mcp"},
 		capability: map[string]string{"kind": "tool", "name": "create_issue"},
 	})
 	if len(decs) != 2 {
@@ -211,7 +211,7 @@ func TestShimEmitLoop_StatusFlipOnDeny(t *testing.T) {
 	caller := map[string]any{"agent": "demo-agent"}
 	decisions := evaluatePolicies(progs, evalContext{
 		caller:     caller,
-		server:     map[string]string{"name": "github-mcp", "transport": "http", "address": "x"},
+		server:     map[string]any{"name": "github-mcp", "transport": "http", "address": "x"},
 		capability: map[string]string{"kind": "tool", "name": "create_issue", "description": ""},
 		at:         time.Now().UTC(),
 		status:     status,
@@ -251,6 +251,208 @@ func TestShimEmitLoop_WarnDoesNotFlipStatus(t *testing.T) {
 	}
 	if len(decisions) != 1 || decisions[0].Action != "warn" {
 		t.Errorf("expected one warn decision, got %+v", decisions)
+	}
+}
+
+// TestUC8_BlockPublicExposure_EndToEnd: the shipped UC8 template, fed a fake
+// invocation against a server with exposure_state=public, produces decision=
+// denied. Flipping to internal returns no decision (allowed). This is the
+// load-bearing assertion that the Wave N+8 deny path actually denies.
+func TestUC8_BlockPublicExposure_EndToEnd(t *testing.T) {
+	cp, err := compilePolicy(bundlePolicyWire{
+		ID: "tpl-uc8", Name: "block public", Action: "deny",
+		Expression: `server.exposure_state == "public"`,
+	})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	// public exposure -> deny
+	status := "ok"
+	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		caller:     map[string]any{"agent": "demo-agent", "flagged_new": false, "acknowledged": false},
+		server:     map[string]any{"name": "github-mcp", "exposure_state": "public", "exposureState": "public"},
+		capability: map[string]string{"kind": "tool", "name": "create_issue"},
+		at:         time.Now().UTC(),
+		status:     status,
+	})
+	for _, d := range decs {
+		if d.Action == "deny" && status != "denied" {
+			status = "denied"
+		}
+	}
+	if status != "denied" {
+		t.Fatalf("public exposure: expected status flip to denied, got %q (decisions=%+v)", status, decs)
+	}
+	if len(decs) != 1 || decs[0].PolicyID != "tpl-uc8" {
+		t.Errorf("expected one matching decision, got %+v", decs)
+	}
+
+	// internal exposure -> allow
+	status = "ok"
+	decs = evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		caller:     map[string]any{"agent": "demo-agent"},
+		server:     map[string]any{"name": "github-mcp", "exposure_state": "internal", "exposureState": "internal"},
+		capability: map[string]string{"kind": "tool", "name": "create_issue"},
+		at:         time.Now().UTC(),
+		status:     status,
+	})
+	for _, d := range decs {
+		if d.Action == "deny" && status != "denied" {
+			status = "denied"
+		}
+	}
+	if status != "ok" {
+		t.Errorf("internal exposure: status should stay ok, got %q", status)
+	}
+	if len(decs) != 0 {
+		t.Errorf("internal exposure: expected no decisions, got %+v", decs)
+	}
+}
+
+// TestUC9_BlockUnapprovedCallers_EndToEnd: the shipped UC9 template denies
+// flagged_new=true && !acknowledged callers and allows everything else.
+func TestUC9_BlockUnapprovedCallers_EndToEnd(t *testing.T) {
+	cp, err := compilePolicy(bundlePolicyWire{
+		ID: "tpl-uc9", Name: "block unapproved callers", Action: "deny",
+		Expression: `caller.flagged_new && !caller.acknowledged`,
+	})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	cases := []struct {
+		name        string
+		flaggedNew  bool
+		acknowledged bool
+		wantDenied  bool
+	}{
+		{"flagged_new && !acknowledged → denied", true, false, true},
+		{"flagged_new but acknowledged → allowed", true, true, false},
+		{"aged out (flagged_new=false) → allowed", false, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status := "ok"
+			decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
+				caller: map[string]any{
+					"agent":        "demo-agent",
+					"flagged_new":  tc.flaggedNew,
+					"acknowledged": tc.acknowledged,
+				},
+				server:     map[string]any{"name": "github-mcp", "exposure_state": "internal"},
+				capability: map[string]string{"kind": "tool", "name": "list_issues"},
+				at:         time.Now().UTC(),
+				status:     status,
+			})
+			for _, d := range decs {
+				if d.Action == "deny" && status != "denied" {
+					status = "denied"
+				}
+			}
+			wantStatus := "ok"
+			if tc.wantDenied {
+				wantStatus = "denied"
+			}
+			if status != wantStatus {
+				t.Errorf("got status=%q want=%q (decisions=%+v)", status, wantStatus, decs)
+			}
+		})
+	}
+}
+
+// TestBundleSnapshot_PopulatesCallerCache: applying a bundle with callers[]
+// makes callerBySignature(sig) return the populated row. This is the
+// integration point between the heartbeat-delivered payload and the shim's
+// per-invocation enrichment.
+func TestBundleSnapshot_PopulatesCallerCache(t *testing.T) {
+	c := newPolicyCache()
+	c.apply(&policyBundleWire{
+		Version: 7,
+		Policies: []bundlePolicyWire{
+			{ID: "p1", Name: "x", Action: "warn", Expression: `status == "ok"`},
+		},
+		Callers: []bundleCallerWire{
+			{Signature: "abc123", Label: "alice", FlaggedNew: true, Acknowledged: false},
+			{Signature: "def456", Label: "bot", FlaggedNew: false, Acknowledged: true},
+		},
+		Servers: []bundleServerWire{
+			{ID: "s-1", Name: "github-mcp", Address: "https://api.github.com/mcp", ExposureState: "public"},
+		},
+	})
+
+	got := c.callerBySignature("abc123")
+	if got.Label != "alice" || !got.FlaggedNew || got.Acknowledged {
+		t.Errorf("alice lookup: %+v", got)
+	}
+	got = c.callerBySignature("def456")
+	if got.Label != "bot" || got.FlaggedNew || !got.Acknowledged {
+		t.Errorf("bot lookup: %+v", got)
+	}
+	srv := c.serverByName("github-mcp")
+	if srv.ID != "s-1" || srv.ExposureState != "public" {
+		t.Errorf("github-mcp lookup: %+v", srv)
+	}
+	// Unknown lookups return zero values, not a panic.
+	miss := c.callerBySignature("nope")
+	if miss.Signature != "" || miss.FlaggedNew {
+		t.Errorf("unknown caller lookup should be zero, got %+v", miss)
+	}
+	missSrv := c.serverByName("nope")
+	if missSrv.Name != "" {
+		t.Errorf("unknown server lookup should be zero, got %+v", missSrv)
+	}
+}
+
+// TestEvalContext_BundleEnrichmentWires_CallerFlaggedNew: end-to-end through
+// the cache + signature + enrichment helpers. A fake caller produced by the
+// shim, when its signature is in the bundle, makes the UC9 template deny.
+func TestEvalContext_BundleEnrichmentWires_CallerFlaggedNew(t *testing.T) {
+	caller := map[string]any{"agent": "demo-agent"}
+	sig := callerSignature(caller)
+	if sig == "" {
+		t.Fatal("empty signature")
+	}
+
+	c := newPolicyCache()
+	c.apply(&policyBundleWire{
+		Version: 1,
+		Policies: []bundlePolicyWire{
+			{ID: "uc9", Name: "uc9", Action: "deny", Expression: `caller.flagged_new && !caller.acknowledged`},
+		},
+		Callers: []bundleCallerWire{
+			{Signature: sig, Label: "demo-agent", FlaggedNew: true, Acknowledged: false},
+		},
+	})
+
+	enriched := enrichCallerForEval(caller, sig, c.callerBySignature(sig))
+	if v, ok := enriched["flagged_new"].(bool); !ok || !v {
+		t.Fatalf("enrichment missing flagged_new=true, got %+v", enriched)
+	}
+
+	status := "ok"
+	decs := evaluatePolicies(c.programs(), evalContext{
+		caller:     enriched,
+		server:     map[string]any{"name": "github-mcp", "exposure_state": "internal"},
+		capability: map[string]string{"kind": "tool", "name": "create_issue"},
+		at:         time.Now().UTC(),
+		status:     status,
+	})
+	for _, d := range decs {
+		if d.Action == "deny" && status != "denied" {
+			status = "denied"
+		}
+	}
+	if status != "denied" {
+		t.Errorf("expected status=denied, got %q (decisions=%+v)", status, decs)
+	}
+}
+
+func TestCallerSignature_StableAcrossKeyOrder(t *testing.T) {
+	a := callerSignature(map[string]any{"agent": "demo", "user": "alice"})
+	b := callerSignature(map[string]any{"user": "alice", "agent": "demo"})
+	if a != b {
+		t.Errorf("signature differs with key order: %s vs %s", a, b)
 	}
 }
 

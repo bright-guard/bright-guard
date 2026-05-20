@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,8 +93,10 @@ type disabledCapabilityRef struct {
 }
 
 type policyBundleWire struct {
-	Version  int64              `json:"version"`
-	Policies []bundlePolicyWire `json:"policies"`
+	Version  int64               `json:"version"`
+	Policies []bundlePolicyWire  `json:"policies"`
+	Servers  []bundleServerWire  `json:"servers,omitempty"`
+	Callers  []bundleCallerWire  `json:"callers,omitempty"`
 }
 
 type bundlePolicyWire struct {
@@ -99,6 +104,27 @@ type bundlePolicyWire struct {
 	Name       string `json:"name"`
 	Action     string `json:"action"`
 	Expression string `json:"expression"`
+}
+
+// bundleServerWire is the per-server snapshot the shim's CEL eval reads when a
+// policy references server.exposure_state. Delivered on heartbeat; cached
+// alongside the compiled policy programs and refreshed on bundle-version bump.
+type bundleServerWire struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	ExposureState string `json:"exposureState"`
+}
+
+// bundleCallerWire is the per-caller snapshot. Signature is the canonical SHA256
+// hash the control plane uses to deduplicate callers; the shim recomputes the
+// signature from the invocation's caller payload to look up flagged_new /
+// acknowledged.
+type bundleCallerWire struct {
+	Signature    string `json:"signature"`
+	Label        string `json:"label"`
+	FlaggedNew   bool   `json:"flaggedNew"`
+	Acknowledged bool   `json:"acknowledged"`
 }
 
 func main() {
@@ -203,12 +229,21 @@ func emit(controlPlane, credential string, cfg *shimConfig, policies *policyCach
 			status = "denied"
 		}
 
+		// Build the eval context: enrich `server` from the bundle's per-server
+		// snapshot (exposure_state, id) and `caller` from the bundle's per-
+		// caller snapshot (signature, flagged_new, acknowledged). The caller's
+		// canonical signature is the lookup key so the shim mirrors how the
+		// control plane deduplicates identities.
+		sig := callerSignature(caller)
+		evalCaller := enrichCallerForEval(caller, sig, policies.callerBySignature(sig))
+		evalServer := buildEvalServer(s, policies.serverByName(s.Name))
+
 		// Second denial source: CEL policy bundle. Evaluate every policy;
 		// record matches; deny-action policies flip status to "denied" if not
 		// already denied.
 		decisions := evaluatePolicies(progs, evalContext{
-			caller:     caller,
-			server:     map[string]string{"name": s.Name, "transport": s.Transport, "address": s.Address},
+			caller:     evalCaller,
+			server:     evalServer,
 			capability: map[string]string{"kind": c.Kind, "name": c.Name, "description": c.Description},
 			at:         time.Now().UTC(),
 			status:     status,
@@ -357,15 +392,117 @@ func envOr(k, def string) string {
 	return def
 }
 
-// policyCache holds the compiled bundle and its version. Goroutine-safe so
-// future eval paths could read while heartbeat updates concurrently.
-type policyCache struct {
-	mu    sync.RWMutex
-	ver   int64
-	progs []compiledPolicy
+// callerSignature mirrors cloud/api/internal/store/callers.SignatureFor:
+// hex(sha256(canonical-json(caller))). Stable key order is the load-bearing
+// detail — two callers with the same content but different key order MUST
+// hash identically, otherwise the bundle's caller snapshot is unreachable.
+// Empty / nil callers collapse to the literal "_anonymous_".
+func callerSignature(caller map[string]any) string {
+	enc := canonicalEncode(caller)
+	if enc == "{}" || enc == "" {
+		enc = "_anonymous_"
+	}
+	sum := sha256.Sum256([]byte(enc))
+	return hex.EncodeToString(sum[:])
 }
 
-func newPolicyCache() *policyCache { return &policyCache{} }
+func canonicalEncode(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		b.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			kb, _ := json.Marshal(k)
+			b.Write(kb)
+			b.WriteByte(':')
+			b.WriteString(canonicalEncode(t[k]))
+		}
+		b.WriteByte('}')
+		return b.String()
+	case []any:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, e := range t {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(canonicalEncode(e))
+		}
+		b.WriteByte(']')
+		return b.String()
+	default:
+		out, _ := json.Marshal(t)
+		return string(out)
+	}
+}
+
+// enrichCallerForEval folds the bundle-side flagged_new / acknowledged /
+// signature / label fields into the caller map so a CEL expression like
+// `caller.flagged_new && !caller.acknowledged` resolves without the policy
+// author needing to know how the control plane categorizes the identity.
+func enrichCallerForEval(caller map[string]any, signature string, bundle bundleCallerWire) map[string]any {
+	out := make(map[string]any, len(caller)+4)
+	for k, v := range caller {
+		out[k] = v
+	}
+	out["signature"] = signature
+	out["flagged_new"] = bundle.FlaggedNew
+	out["acknowledged"] = bundle.Acknowledged
+	if bundle.Label != "" {
+		out["label"] = bundle.Label
+	}
+	return out
+}
+
+// buildEvalServer lifts the local server config into a CEL-friendly map,
+// overlaying the bundle's exposure_state + id when known. Falls back to
+// "unknown" exposure_state when the bundle hasn't seen this server (e.g. the
+// first heartbeat after a fresh enrollment).
+func buildEvalServer(s server, bundle bundleServerWire) map[string]any {
+	exposure := bundle.ExposureState
+	if exposure == "" {
+		exposure = "unknown"
+	}
+	return map[string]any{
+		"id":             bundle.ID,
+		"name":           s.Name,
+		"address":        s.Address,
+		"transport":      s.Transport,
+		"exposure_state": exposure,
+		// camelCase alias preserves any policy authored against the original
+		// env shape before Wave N+8 renamed the field.
+		"exposureState": exposure,
+	}
+}
+
+// policyCache holds the compiled bundle and its version. Goroutine-safe so
+// future eval paths could read while heartbeat updates concurrently.
+//
+// Wave N+8 added the servers and callers snapshots so the shim's local eval
+// can resolve server.exposure_state and caller.flagged_new without a
+// per-invocation round trip to the control plane.
+type policyCache struct {
+	mu      sync.RWMutex
+	ver     int64
+	progs   []compiledPolicy
+	servers map[string]bundleServerWire // keyed by server name
+	callers map[string]bundleCallerWire // keyed by signature
+}
+
+func newPolicyCache() *policyCache {
+	return &policyCache{
+		servers: map[string]bundleServerWire{},
+		callers: map[string]bundleCallerWire{},
+	}
+}
 
 func (c *policyCache) version() int64 {
 	c.mu.RLock()
@@ -382,6 +519,27 @@ func (c *policyCache) programs() []compiledPolicy {
 	cp := make([]compiledPolicy, len(c.progs))
 	copy(cp, c.progs)
 	return cp
+}
+
+// serverByName returns the cached server snapshot for the given local server
+// name, or an empty value if the bundle hasn't seen this server. Empty values
+// mean any policy reading server.exposure_state sees "" (which doesn't match
+// the "public" template); preferred over returning ok=false because the CEL
+// eval must remain side-effect-free and never fail open on missing data.
+func (c *policyCache) serverByName(name string) bundleServerWire {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.servers[name]
+}
+
+// callerBySignature returns the cached caller snapshot keyed by signature.
+// Empty when the caller hasn't been observed by the control plane yet —
+// flagged_new=false in that case is correct because a brand-new caller hasn't
+// been classified yet (the caller sweeper will catch it on its next run).
+func (c *policyCache) callerBySignature(sig string) bundleCallerWire {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.callers[sig]
 }
 
 // apply swaps in a new bundle. Fail-closed: if any policy fails to compile
@@ -401,9 +559,20 @@ func (c *policyCache) apply(b *policyBundleWire) {
 		}
 		progs = append(progs, cp)
 	}
+	servers := make(map[string]bundleServerWire, len(b.Servers))
+	for _, s := range b.Servers {
+		servers[s.Name] = s
+	}
+	callers := make(map[string]bundleCallerWire, len(b.Callers))
+	for _, ca := range b.Callers {
+		callers[ca.Signature] = ca
+	}
 	c.mu.Lock()
 	c.ver = b.Version
 	c.progs = progs
+	c.servers = servers
+	c.callers = callers
 	c.mu.Unlock()
-	log.Printf("policy bundle v%d applied: %d programs", b.Version, len(progs))
+	log.Printf("policy bundle v%d applied: %d programs, %d servers, %d callers",
+		b.Version, len(progs), len(servers), len(callers))
 }

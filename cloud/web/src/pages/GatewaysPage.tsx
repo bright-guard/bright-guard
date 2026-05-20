@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import type { Gateway, GatewayCreateResp } from "../api/types";
 import { isOnline, relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 export default function GatewaysPage() {
   const { activeOrgId } = useAuth();
@@ -28,6 +29,10 @@ export default function GatewaysPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -42,9 +47,7 @@ export default function GatewaysPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          disabled={!activeOrgId}
-          title={activeOrgId ? undefined : "Select or create an org first"}
-          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400"
         >
           Add gateway
         </button>
@@ -103,7 +106,7 @@ export default function GatewaysPage() {
 
       {showCreate && (
         <CreateGatewayModal
-          orgId={activeOrgId!}
+          orgId={activeOrgId}
           onClose={() => {
             setShowCreate(false);
             reload();

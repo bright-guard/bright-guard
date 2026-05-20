@@ -19,12 +19,16 @@ const evalCostLimit uint64 = 50_000
 // match cloud/api/internal/policy.New() byte-for-byte:
 //
 //	cel.Variable("caller",     cel.MapType(cel.StringType, cel.DynType))
-//	cel.Variable("server",     cel.MapType(cel.StringType, cel.StringType))
+//	cel.Variable("server",     cel.MapType(cel.StringType, cel.DynType))
 //	cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType))
+//	cel.Variable("request",    cel.MapType(cel.StringType, cel.DynType))
 //	cel.Variable("at",         cel.TimestampType)
 //	cel.Variable("status",     cel.StringType)
 //
 // No ext.Strings(), no other extensions — same environment as the server.
+// Wave N+8 widened `server` to dyn and added `request` so the UC8/UC9 policy
+// templates can read server.exposure_state and request.now without the env
+// authoring layer rejecting unknown fields.
 var (
 	celEnvOnce sync.Once
 	celEnvVal  *cel.Env
@@ -35,8 +39,9 @@ func sharedCELEnv() (*cel.Env, error) {
 	celEnvOnce.Do(func() {
 		celEnvVal, celEnvErr = cel.NewEnv(
 			cel.Variable("caller", cel.MapType(cel.StringType, cel.DynType)),
-			cel.Variable("server", cel.MapType(cel.StringType, cel.StringType)),
+			cel.Variable("server", cel.MapType(cel.StringType, cel.DynType)),
 			cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType)),
+			cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
 			cel.Variable("at", cel.TimestampType),
 			cel.Variable("status", cel.StringType),
 		)
@@ -78,9 +83,11 @@ func compilePolicy(p bundlePolicyWire) (compiledPolicy, error) {
 }
 
 // evalContext is the snapshot fed to each policy program per fake invocation.
+// server is map[string]any (CEL dyn) so we can hold strings (name, address,
+// exposure_state, id) without the env rejecting non-string future values.
 type evalContext struct {
 	caller     map[string]any
-	server     map[string]string
+	server     map[string]any
 	capability map[string]string
 	at         time.Time
 	status     string
@@ -119,16 +126,21 @@ func evalOne(c compiledPolicy, ec evalContext) (bool, error) {
 	}
 	srv := ec.server
 	if srv == nil {
-		srv = map[string]string{}
+		srv = map[string]any{}
 	}
 	cap := ec.capability
 	if cap == nil {
 		cap = map[string]string{}
 	}
+	now := ec.at
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	out, _, err := c.prg.ContextEval(context.Background(), map[string]any{
 		"caller":     caller,
 		"server":     srv,
 		"capability": cap,
+		"request":    map[string]any{"now": now},
 		"at":         ec.at,
 		"status":     ec.status,
 	})

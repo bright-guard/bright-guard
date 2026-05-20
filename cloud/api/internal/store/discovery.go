@@ -335,6 +335,46 @@ func (d *Discovery) ListServersForGateway(ctx context.Context, orgID, gatewayID 
 	return out, rows.Err()
 }
 
+// BundleSnapshotServer is the per-server wire shape delivered in the policy
+// bundle. Lean enough that shipping all of an org's servers on every cache
+// miss stays cheap.
+type BundleSnapshotServer struct {
+	ID            uuid.UUID
+	Name          string
+	Address       string
+	ExposureState string
+}
+
+// ListServersForBundle returns up to `limit` mcp_servers for the org so the
+// shim can answer server.exposure_state locally for any observed invocation.
+// Ordered by name for determinism so two consecutive bundles at the same
+// version produce byte-identical wire output.
+func (d *Discovery) ListServersForBundle(ctx context.Context, orgID uuid.UUID, limit int) ([]BundleSnapshotServer, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	const q = `
+		select id, name, address, exposure_state
+		from mcp_servers
+		where org_id = $1
+		order by name
+		limit $2`
+	rows, err := d.Pool.Query(ctx, q, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BundleSnapshotServer{}
+	for rows.Next() {
+		var s BundleSnapshotServer
+		if err := rows.Scan(&s.ID, &s.Name, &s.Address, &s.ExposureState); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*models.MCPServerDetail, error) {
 	det := &models.MCPServerDetail{}
 	const sq = `

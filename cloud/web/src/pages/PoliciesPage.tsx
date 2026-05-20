@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Policy, PolicyAction } from "../api/types";
+import type { Policy, PolicyAction, PolicyTemplate } from "../api/types";
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
 import HelpTooltip from "../components/HelpTooltip";
@@ -17,6 +17,10 @@ export default function PoliciesPage() {
   const [rows, setRows] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [seedExpression, setSeedExpression] = useState<string | undefined>(undefined);
+  const [seedName, setSeedName] = useState<string | undefined>(undefined);
+  const [seedAction, setSeedAction] = useState<PolicyAction | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,12 +85,25 @@ export default function PoliciesPage() {
             matching invocations are flagged in Activity but never blocked.
           </p>
         </div>
-        <button
-          onClick={() => setShowNew(true)}
-          className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-        >
-          New policy
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Start from a template
+          </button>
+          <button
+            onClick={() => {
+              setSeedExpression(undefined);
+              setSeedName(undefined);
+              setSeedAction(undefined);
+              setShowNew(true);
+            }}
+            className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+          >
+            New policy
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -161,6 +178,9 @@ export default function PoliciesPage() {
       {showNew && (
         <NewPolicyModal
           orgId={activeOrgId!}
+          initialExpression={seedExpression}
+          initialName={seedName}
+          initialAction={seedAction}
           onClose={() => setShowNew(false)}
           onCreated={() => {
             setShowNew(false);
@@ -168,23 +188,119 @@ export default function PoliciesPage() {
           }}
         />
       )}
+
+      {showTemplates && (
+        <TemplatesModal
+          onClose={() => setShowTemplates(false)}
+          onPick={(tpl) => {
+            setSeedExpression(tpl.expression);
+            setSeedName(tpl.name);
+            setSeedAction(tpl.action);
+            setShowTemplates(false);
+            setShowNew(true);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// TemplatesModal lists starter CEL policies from /api/policy/templates and
+// hands the chosen one back to the parent so the NewPolicyModal opens with
+// the template pre-filled. Two ships in Wave N+8 (UC8 + UC9); list is static
+// today, so a single fetch on mount is sufficient.
+function TemplatesModal({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick: (tpl: PolicyTemplate) => void;
+}) {
+  const [items, setItems] = useState<PolicyTemplate[] | null>(null);
+  useEffect(() => {
+    api<{ items: PolicyTemplate[] }>(`/api/policy/templates`)
+      .then((r) => setItems(r.items ?? []))
+      .catch(() => setItems([]));
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Start from a template</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              One-click starter policies. Both enforce in real-time at the gateway
+              (not audit-only): UC8 blocks public-exposure servers, UC9 blocks
+              unapproved callers.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {items === null && <div className="text-sm text-slate-500">Loading…</div>}
+          {items && items.length === 0 && (
+            <div className="text-sm text-slate-500">No templates available.</div>
+          )}
+          {items?.map((tpl) => (
+            <div
+              key={tpl.id}
+              className="rounded-md border border-slate-200 p-4 hover:border-[var(--accent)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">{tpl.name}</h3>
+                    {tpl.useCase && (
+                      <span className="rounded-md border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                        Enforces {tpl.useCase}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{tpl.description}</p>
+                  <pre className="mt-2 overflow-x-auto rounded-md bg-slate-50 p-2 font-mono text-[11px] text-slate-700">
+                    {tpl.expression}
+                  </pre>
+                </div>
+                <button
+                  onClick={() => onPick(tpl)}
+                  className="shrink-0 rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+                >
+                  Use template
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 function NewPolicyModal({
   orgId,
+  initialExpression,
+  initialName,
+  initialAction,
   onClose,
   onCreated,
 }: {
   orgId: string;
+  initialExpression?: string;
+  initialName?: string;
+  initialAction?: PolicyAction;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [description, setDescription] = useState("");
-  const [expression, setExpression] = useState(`capability.name == "create_issue"`);
-  const [action, setAction] = useState<PolicyAction>("deny");
+  const [expression, setExpression] = useState(
+    initialExpression ?? `capability.name == "create_issue"`,
+  );
+  const [action, setAction] = useState<PolicyAction>(initialAction ?? "deny");
   const [enabled, setEnabled] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

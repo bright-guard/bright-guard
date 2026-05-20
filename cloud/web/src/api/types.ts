@@ -459,6 +459,17 @@ export type PolicySimulateResp = {
   to: string;
 };
 
+// PolicyTemplate is the starter-policy shape from GET /api/policy/templates.
+// Surfaces in the PoliciesPage "Start from a template" affordance.
+export type PolicyTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  expression: string;
+  action: PolicyAction;
+  useCase: string;
+};
+
 // --- Executive dashboard (Overview page) ---
 
 export type DashboardRange = "7d" | "30d" | "90d";

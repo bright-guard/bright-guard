@@ -162,7 +162,7 @@ const (
 )
 
 // OrgCaller is a distinct caller identity observed in mcp_invocations.caller
-// for an org, used by UC9 credential governance (detection-only).
+// for an org, used by UC9 credential governance.
 type OrgCaller struct {
 	ID              uuid.UUID       `json:"id"`
 	OrgID           uuid.UUID       `json:"orgId"`
@@ -173,6 +173,11 @@ type OrgCaller struct {
 	LastSeenAt      time.Time       `json:"lastSeenAt"`
 	InvocationCount int64           `json:"invocationCount"`
 	FlaggedNew      bool            `json:"flaggedNew"`
+	// AcknowledgedAt is set on explicit human acknowledgement and distinguishes
+	// "approved by an operator" from "aged out of the new-caller window"
+	// (which also clears FlaggedNew). The shim's CEL env exposes the boolean
+	// (AcknowledgedAt != nil) as caller.acknowledged.
+	AcknowledgedAt *time.Time `json:"acknowledgedAt,omitempty"`
 }
 
 type OrgCallerTopServer struct {
@@ -277,11 +282,39 @@ type BundlePolicy struct {
 	Expression string       `json:"expression"`
 }
 
+// BundleServer is the minimal per-server snapshot the shim needs to answer
+// server.exposure_state / server.id locally for any observed invocation.
+// Added in Wave N+8 (UC8 enforcement).
+type BundleServer struct {
+	ID            uuid.UUID `json:"id"`
+	Name          string    `json:"name"`
+	Address       string    `json:"address"`
+	ExposureState string    `json:"exposureState"`
+}
+
+// BundleCaller is the minimal per-caller snapshot the shim needs to answer
+// caller.flagged_new / caller.acknowledged locally. Keyed by signature so the
+// shim can match observed callers without any control-plane round trip.
+// Added in Wave N+8 (UC9 enforcement).
+type BundleCaller struct {
+	Signature    string `json:"signature"`
+	Label        string `json:"label"`
+	FlaggedNew   bool   `json:"flaggedNew"`
+	Acknowledged bool   `json:"acknowledged"`
+}
+
 // PolicyBundle is the heartbeat-response payload. Version is the org's
 // monotonically increasing policy_bundle_version; the shim sends its cached
 // version via X-Bundle-Version and the server only includes Policies when
 // the client is behind.
+//
+// Wave N+8 adds Servers and Callers — the per-org snapshot the shim's local
+// CEL eval reads from to answer server.exposure_state and caller.flagged_new.
+// Older shims silently ignore the new fields; the wire format stays
+// backwards-compatible.
 type PolicyBundle struct {
 	Version  int64          `json:"version"`
 	Policies []BundlePolicy `json:"policies"`
+	Servers  []BundleServer `json:"servers,omitempty"`
+	Callers  []BundleCaller `json:"callers,omitempty"`
 }

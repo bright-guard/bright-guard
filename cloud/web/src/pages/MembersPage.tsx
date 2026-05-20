@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 type ErrBody = { error?: { code?: string; message?: string } };
 
@@ -100,6 +101,10 @@ export default function MembersPage() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  if (!orgId) {
+    return <NoOrgEmptyState />;
   }
 
   return (

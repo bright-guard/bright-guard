@@ -12,6 +12,7 @@ import {
 } from "../lib/exposure";
 import PageHelp from "../components/PageHelp";
 import HelpTooltip from "../components/HelpTooltip";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 const EXPOSURE_TERM: Record<ExposureState, string> = {
   public: "public_exposure",
@@ -55,6 +56,10 @@ export default function MCPServersPage() {
     () => (filter === "all" ? servers : servers.filter((s) => s.exposureState === filter)),
     [servers, filter],
   );
+
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
+  }
 
   return (
     <div className="space-y-6">

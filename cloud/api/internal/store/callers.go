@@ -249,7 +249,7 @@ func (c *Callers) List(ctx context.Context, orgID uuid.UUID, f CallerFilter) ([]
 	pageArgs = append(pageArgs, limit+1)
 
 	listQ := `
-		select id, org_id, signature, label, caller, first_seen_at, last_seen_at, invocation_count, flagged_new
+		select id, org_id, signature, label, caller, first_seen_at, last_seen_at, invocation_count, flagged_new, acknowledged_at
 		from org_callers
 		where ` + pageWhere + `
 		order by last_seen_at desc, id desc
@@ -265,7 +265,7 @@ func (c *Callers) List(ctx context.Context, orgID uuid.UUID, f CallerFilter) ([]
 	for rows.Next() {
 		var r models.OrgCaller
 		if err := rows.Scan(&r.ID, &r.OrgID, &r.Signature, &r.Label, &r.Caller,
-			&r.FirstSeenAt, &r.LastSeenAt, &r.InvocationCount, &r.FlaggedNew); err != nil {
+			&r.FirstSeenAt, &r.LastSeenAt, &r.InvocationCount, &r.FlaggedNew, &r.AcknowledgedAt); err != nil {
 			return nil, "", CallerTotals{}, err
 		}
 		out = append(out, r)
@@ -290,11 +290,11 @@ func (c *Callers) List(ctx context.Context, orgID uuid.UUID, f CallerFilter) ([]
 func (c *Callers) Get(ctx context.Context, orgID, id uuid.UUID) (*models.OrgCallerDetail, error) {
 	det := &models.OrgCallerDetail{}
 	const sq = `
-		select id, org_id, signature, label, caller, first_seen_at, last_seen_at, invocation_count, flagged_new
+		select id, org_id, signature, label, caller, first_seen_at, last_seen_at, invocation_count, flagged_new, acknowledged_at
 		from org_callers where org_id = $1 and id = $2`
 	err := c.Pool.QueryRow(ctx, sq, orgID, id).Scan(
 		&det.ID, &det.OrgID, &det.Signature, &det.Label, &det.Caller,
-		&det.FirstSeenAt, &det.LastSeenAt, &det.InvocationCount, &det.FlaggedNew,
+		&det.FirstSeenAt, &det.LastSeenAt, &det.InvocationCount, &det.FlaggedNew, &det.AcknowledgedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -356,9 +356,12 @@ func (c *Callers) Get(ctx context.Context, orgID, id uuid.UUID) (*models.OrgCall
 	return det, rrows.Err()
 }
 
-// Acknowledge clears flagged_new for a single caller.
+// Acknowledge clears flagged_new and stamps acknowledged_at. acknowledged_at
+// distinguishes explicit human approval from aged-out flagging so that the
+// shim's CEL evaluator (caller.flagged_new && !caller.acknowledged) can deny
+// unapproved callers.
 func (c *Callers) Acknowledge(ctx context.Context, orgID, id uuid.UUID) error {
-	const q = `update org_callers set flagged_new = false where org_id = $1 and id = $2`
+	const q = `update org_callers set flagged_new = false, acknowledged_at = coalesce(acknowledged_at, now()) where org_id = $1 and id = $2`
 	tag, err := c.Pool.Exec(ctx, q, orgID, id)
 	if err != nil {
 		return err
@@ -367,6 +370,47 @@ func (c *Callers) Acknowledge(ctx context.Context, orgID, id uuid.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// BundleSnapshotCaller is the per-caller wire shape delivered in the policy
+// bundle. Kept lean — the shim only needs the lookup keys (signature) plus
+// the two booleans the CEL env exposes.
+type BundleSnapshotCaller struct {
+	Signature    string
+	Label        string
+	FlaggedNew   bool
+	Acknowledged bool
+}
+
+// ListForBundle returns at most `limit` callers seen in the trailing `window`,
+// ordered so that flagged_new rows are preferred when the limit is hit. Used
+// to build the heartbeat-delivered bundle so the shim can answer
+// caller.flagged_new / caller.acknowledged locally.
+func (c *Callers) ListForBundle(ctx context.Context, orgID uuid.UUID, window time.Duration, limit int) ([]BundleSnapshotCaller, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	const q = `
+		select signature, label, flagged_new, acknowledged_at is not null
+		from org_callers
+		where org_id = $1 and last_seen_at > now() - $2::interval
+		order by flagged_new desc, last_seen_at desc
+		limit $3`
+	interval := fmt.Sprintf("%d seconds", int64(window.Seconds()))
+	rows, err := c.Pool.Query(ctx, q, orgID, interval, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BundleSnapshotCaller{}
+	for rows.Next() {
+		var r BundleSnapshotCaller
+		if err := rows.Scan(&r.Signature, &r.Label, &r.FlaggedNew, &r.Acknowledged); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // SweepNew scans mcp_invocations newer than each org's current watermark and

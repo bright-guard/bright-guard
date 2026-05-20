@@ -6,6 +6,7 @@ import type { OrgCaller, OrgCallerListResp } from "../api/types";
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
 import HelpTooltip from "../components/HelpTooltip";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 type FilterMode = "all" | "new";
 
@@ -84,6 +85,10 @@ export default function CallersPage() {
     } finally {
       setLoadingMore(false);
     }
+  }
+
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
   }
 
   return (

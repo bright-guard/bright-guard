@@ -38,6 +38,7 @@ func NewMetricsRollup(conns *store.Connections, dash *store.Dashboard, interval 
 
 // Run loops until ctx is cancelled.
 func (m *MetricsRollup) Run(ctx context.Context) {
+	log.Printf("metrics rollup: starting interval=%s", m.Interval)
 	t := time.NewTicker(m.Interval)
 	defer t.Stop()
 	m.tick(ctx)
@@ -52,6 +53,7 @@ func (m *MetricsRollup) Run(ctx context.Context) {
 }
 
 func (m *MetricsRollup) tick(ctx context.Context) {
+	start := time.Now()
 	ok, err := m.Connections.TryAdvisoryLock(ctx, metricsRollupLockKey)
 	if err != nil {
 		log.Printf("metrics rollup: advisory lock check failed: %v", err)
@@ -67,21 +69,28 @@ func (m *MetricsRollup) tick(ctx context.Context) {
 	}
 	now := time.Now().UTC()
 	today := store.DayInUTC(now)
+	wasBackfill := !m.backfilled
+	backfilledDays := 0
 	for _, id := range orgs {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		// Backfill once per process; only for orgs that have gaps. Idempotent.
-		if !m.backfilled {
-			if err := m.backfillOrg(ctx, id, today); err != nil {
+		if wasBackfill {
+			n, err := m.backfillOrg(ctx, id, today)
+			if err != nil {
 				log.Printf("metrics rollup: backfill %s: %v", id, err)
 			}
+			backfilledDays += n
 		}
 		if err := m.rollupToday(ctx, id, today); err != nil {
 			log.Printf("metrics rollup: today %s: %v", id, err)
 		}
 	}
+	if wasBackfill {
+		log.Printf("metrics rollup: backfilled %d days for %d orgs", backfilledDays, len(orgs))
+	}
 	m.backfilled = true
+	log.Printf("metrics rollup: tick ok orgs=%d duration=%s", len(orgs), time.Since(start))
 }
 
 // rollupToday computes today's metrics row for one org and upserts it.
@@ -128,21 +137,21 @@ func (m *MetricsRollup) rollupToday(ctx context.Context, orgID uuid.UUID, today 
 //   - public_exposure_count: today's value (same reason — exposure history
 //     is not retained per-day).
 //   - posture_score: recomputed from those proxies; close enough for a chart.
-func (m *MetricsRollup) backfillOrg(ctx context.Context, orgID uuid.UUID, today time.Time) error {
+func (m *MetricsRollup) backfillOrg(ctx context.Context, orgID uuid.UUID, today time.Time) (int, error) {
 	from := today.AddDate(0, 0, -metricsBackfillDays)
 	missing, err := m.Dashboard.MissingDays(ctx, orgID, from, today.AddDate(0, 0, -1))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(missing) == 0 {
-		return nil
+		return 0, nil
 	}
 	// Bucket invocations + new-counter rows across the whole missing range
 	// in one go, then index by day. (We may include some non-missing days in
 	// the query; the per-day upsert below filters.)
 	buckets, err := m.Dashboard.BackfillBuckets(ctx, orgID, from, today)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	byDay := map[string]store.DailyInvocationsBucket{}
 	for _, b := range buckets {
@@ -152,14 +161,14 @@ func (m *MetricsRollup) backfillOrg(ctx context.Context, orgID uuid.UUID, today 
 	// historical day. See module docstring.
 	snap, err := m.Dashboard.Snapshot(ctx, orgID, time.Now().UTC().Add(-metricsGatewayOnlineW))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, day := range missing {
 		key := day.UTC().Format("2006-01-02")
 		b := byDay[key]
 		servers, err := m.Dashboard.ServerCountAt(ctx, orgID, day.Add(24*time.Hour))
 		if err != nil {
-			return err
+			return 0, err
 		}
 		// Per-day posture using historical server count + today's other proxies.
 		callersClean := snap.CallersTotal - snap.CallersFlaggedNew
@@ -193,8 +202,8 @@ func (m *MetricsRollup) backfillOrg(ctx context.Context, orgID uuid.UUID, today 
 			GatewaysOnline:      snap.GatewaysOnline,
 			PostureScore:        ps,
 		}); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(missing), nil
 }

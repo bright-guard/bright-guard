@@ -10,6 +10,7 @@ import type {
 import { relativeTime } from "../lib/time";
 import AddConnectionWizard from "./AddConnectionWizard";
 import PageHelp from "../components/PageHelp";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 const STATUS_STYLES: Record<MCPConnection["status"], string> = {
   healthy: "bg-emerald-400",
@@ -142,6 +143,10 @@ export default function ConnectionsPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
   }
 
   return (

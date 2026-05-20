@@ -12,6 +12,7 @@ import type {
   Gateway,
 } from "../api/types";
 import PageHelp from "../components/PageHelp";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 import KpiTile from "../components/dashboard/KpiTile";
 import RangeSelector from "../components/dashboard/RangeSelector";
 import InvocationTrendChart from "../components/dashboard/InvocationTrendChart";
@@ -83,6 +84,10 @@ export default function OverviewPage() {
     kpis?.tiles.forEach((t) => (m[t.key] = t));
     return m;
   }, [kpis]);
+
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
+  }
 
   return (
     <div className="space-y-6">

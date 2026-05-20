@@ -100,6 +100,9 @@ func (s *Server) Router() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireUser)
 		r.Get("/api/me", s.handleMe)
+		// Static catalog of starter CEL policies (UC8/UC9). Org-independent so
+		// it lives at the auth-required root, not under /api/orgs/{orgId}.
+		r.Get("/api/policy/templates", s.handleListPolicyTemplates)
 		r.Post("/api/orgs", s.handleCreateOrg)
 		r.Get("/api/orgs", s.handleListOrgs)
 		r.Post("/api/sessions/active-org", s.handleSetActiveOrg)

@@ -33,15 +33,30 @@ func Handler() http.Handler {
 		// Try the requested file. If it doesn't exist, fall back to index.html.
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if p == "" {
+			w.Header().Set("Cache-Control", "no-cache")
 			fileServer.ServeHTTP(w, r)
 			return
 		}
 		if _, err := fs.Stat(sub, p); err == nil {
+			setCacheControl(w, p)
 			fileServer.ServeHTTP(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/"
 		fileServer.ServeHTTP(w, r2)
 	})
+}
+
+// setCacheControl picks a cache policy based on the asset path. Assets under
+// /assets/ are content-hashed by Vite and safe to cache for a year. Everything
+// else is a short cache.
+func setCacheControl(w http.ResponseWriter, p string) {
+	switch {
+	case strings.HasPrefix(p, "assets/"):
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	default:
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+	}
 }

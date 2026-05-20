@@ -28,6 +28,14 @@ const (
 const enrollmentTokenTTL = 24 * time.Hour
 const onlineWindow = 5 * time.Minute
 
+// Bundle-size caps (Wave N+8). Exceeding either is logged but not an error —
+// over-cap orgs get the truncated set so enforcement keeps working.
+const (
+	bundleMaxServers   = 5000
+	bundleMaxCallers   = 1000
+	bundleCallerWindow = 30 * 24 * time.Hour // 30 days
+)
+
 func (s *Server) orgMember(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.UserFromContext(r.Context())
@@ -363,6 +371,53 @@ func (s *Server) handleGatewayHeartbeat(w http.ResponseWriter, r *http.Request) 
 					Action:     p.Action,
 					Expression: p.Expression,
 				})
+			}
+			// UC8: ship the per-server snapshot (id/name/address/exposure_state)
+			// so the shim can resolve server.exposure_state locally for any
+			// observed invocation. Hard cap at bundleMaxServers; exceeding the
+			// cap is logged and only the truncated set is delivered.
+			if s.Discovery != nil {
+				servers, err := s.Discovery.ListServersForBundle(r.Context(), gw.OrgID, bundleMaxServers)
+				if err == nil {
+					if len(servers) >= bundleMaxServers {
+						log.Printf("bundle: org %s server snapshot capped at %d", gw.OrgID, bundleMaxServers)
+					}
+					bundle.Servers = make([]models.BundleServer, 0, len(servers))
+					for _, sv := range servers {
+						bundle.Servers = append(bundle.Servers, models.BundleServer{
+							ID:            sv.ID,
+							Name:          sv.Name,
+							Address:       sv.Address,
+							ExposureState: sv.ExposureState,
+						})
+					}
+				} else {
+					log.Printf("bundle: list servers for org %s: %v", gw.OrgID, err)
+				}
+			}
+			// UC9: ship the per-caller snapshot (signature/label/flagged_new/
+			// acknowledged) so the shim can resolve caller.flagged_new etc.
+			// locally. Capped at bundleMaxCallers; ListForBundle orders
+			// flagged_new=true first so an over-cap org still delivers the
+			// rows policies care about.
+			if s.Callers != nil {
+				callers, err := s.Callers.ListForBundle(r.Context(), gw.OrgID, bundleCallerWindow, bundleMaxCallers)
+				if err == nil {
+					if len(callers) >= bundleMaxCallers {
+						log.Printf("bundle: org %s caller snapshot capped at %d", gw.OrgID, bundleMaxCallers)
+					}
+					bundle.Callers = make([]models.BundleCaller, 0, len(callers))
+					for _, ca := range callers {
+						bundle.Callers = append(bundle.Callers, models.BundleCaller{
+							Signature:    ca.Signature,
+							Label:        ca.Label,
+							FlaggedNew:   ca.FlaggedNew,
+							Acknowledged: ca.Acknowledged,
+						})
+					}
+				} else {
+					log.Printf("bundle: list callers for org %s: %v", gw.OrgID, err)
+				}
 			}
 			resp.PolicyBundle = bundle
 		}

@@ -16,6 +16,15 @@ const ACTION_CHIP: Record<PolicyAction, string> = {
   warn: "bg-amber-100 text-amber-700 border-amber-300",
 };
 
+// enforcementUseCase inspects the CEL source for the variable references that
+// the shim turns into real denials at the gateway (vs the audit-only sweep).
+// Returns the matched vision use case, or null when the policy is audit-only.
+function enforcementUseCase(expression: string): string | null {
+  if (/server\.exposure_state/.test(expression)) return "UC8";
+  if (/caller\.flagged_new|caller\.acknowledged/.test(expression)) return "UC9";
+  return null;
+}
+
 export default function PolicyDetailPage() {
   const { activeOrgId } = useAuth();
   const { id } = useParams<{ id: string }>();
@@ -119,6 +128,14 @@ export default function PolicyDetailPage() {
             <span className={`ml-2 inline-flex rounded-md border px-2 py-0.5 text-xs uppercase ${ACTION_CHIP[policy.action]}`}>
               {policy.action}
             </span>
+            {enforcementUseCase(policy.expression) && (
+              <span
+                className="ml-2 inline-flex rounded-md border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700"
+                title="The shim evaluates this policy locally and returns denied — not audit-only."
+              >
+                Enforces {enforcementUseCase(policy.expression)}
+              </span>
+            )}
           </p>
         </div>
         <button

@@ -10,6 +10,7 @@ import type {
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
 import HelpTooltip from "../components/HelpTooltip";
+import NoOrgEmptyState from "../components/NoOrgEmptyState";
 
 type Window = "1h" | "24h" | "7d";
 const WINDOWS: { id: Window; label: string; ms: number }[] = [
@@ -168,6 +169,10 @@ export default function ActivityPage() {
     } finally {
       setLoadingMore(false);
     }
+  }
+
+  if (!activeOrgId) {
+    return <NoOrgEmptyState />;
   }
 
   return (

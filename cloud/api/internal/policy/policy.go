@@ -32,11 +32,27 @@ type Engine struct {
 }
 
 // New builds a fresh Engine.
+//
+// Wave N+8 widened the env:
+//   - `server` is now map<string, dyn> so non-string future fields (bool flags,
+//     numeric ports) won't require a second migration. Today's values are still
+//     strings (name, address, id, exposure_state) plus the legacy exposureState
+//     alias so any policy authored against the old camelCase key keeps working.
+//   - `caller` already exposed everything via dyn; in Wave N+8 we additionally
+//     populate signature/label/flagged_new/acknowledged so UC9 policies have
+//     first-class fields without the policy author needing to introspect the
+//     raw caller payload.
+//   - `request` is a new map<string, dyn> carrying request.now (UTC time of
+//     evaluation). `at` is kept as-is for backwards compatibility.
+//
+// This env declaration MUST stay byte-for-byte identical to
+// cloud/shim/cmd/shim/policy.go's sharedCELEnv().
 func New() (*Engine, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("caller", cel.MapType(cel.StringType, cel.DynType)),
-		cel.Variable("server", cel.MapType(cel.StringType, cel.StringType)),
+		cel.Variable("server", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType)),
+		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("at", cel.TimestampType),
 		cel.Variable("status", cel.StringType),
 	)
@@ -74,6 +90,11 @@ func (e *Engine) Compile(expr string) (*PolicyProgram, error) {
 }
 
 // InvocationContext is the data fed to each Evaluate call.
+//
+// Server is map<string,string> in storage but lifted into a map[string]any
+// for CEL so a future bool/numeric field doesn't break older policies. Caller
+// is shipped as raw JSON (the same shape the shim sees) and decoded inline so
+// each call gets a clean copy.
 type InvocationContext struct {
 	At         time.Time
 	Status     string
@@ -102,10 +123,21 @@ func (p *PolicyProgram) Evaluate(ctx context.Context, ic InvocationContext) (boo
 	if ic.Capability == nil {
 		ic.Capability = map[string]string{}
 	}
+	// Lift map<string,string> server values into a map<string,any> so the env
+	// (now map<string,dyn>) accepts them. Same shape the shim feeds in.
+	srv := make(map[string]any, len(ic.Server))
+	for k, v := range ic.Server {
+		srv[k] = v
+	}
+	now := ic.At
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	out, _, err := p.prg.ContextEval(ctx, map[string]any{
 		"caller":     caller,
-		"server":     ic.Server,
+		"server":     srv,
 		"capability": ic.Capability,
+		"request":    map[string]any{"now": now},
 		"at":         ic.At,
 		"status":     ic.Status,
 	})

@@ -40,6 +40,13 @@ func validPolicyAction(s string) (models.PolicyAction, bool) {
 	return "", false
 }
 
+// handleListPolicyTemplates returns the static starter-policy catalog. Used
+// by the "Start from a template" affordance on PoliciesPage; one click pre-
+// fills the new-policy modal with the CEL source.
+func (s *Server) handleListPolicyTemplates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": policy.Templates()})
+}
+
 func (s *Server) handleListPolicies(w http.ResponseWriter, r *http.Request) {
 	orgID := orgFromCtx(r.Context())
 	out, err := s.Policies.List(r.Context(), orgID)
