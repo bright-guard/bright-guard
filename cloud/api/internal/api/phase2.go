@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -302,8 +303,28 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 // heartbeatResp is the wire-protocol contract for any future real-agentgateway
 // shim: control plane returns the current denylist so the shim can refresh its
 // local policy cache without a separate roundtrip.
+//
+// PolicyBundle is included only when the client's cached version (X-Bundle-Version
+// header or ?bundleVersion=N query) is strictly less than the org's current
+// policy_bundle_version. Otherwise it's omitted entirely to keep ticks light.
 type heartbeatResp struct {
 	DisabledCapabilities []models.DisabledCapabilityRef `json:"disabledCapabilities"`
+	PolicyBundle         *models.PolicyBundle           `json:"policyBundle,omitempty"`
+}
+
+func clientBundleVersion(r *http.Request) int64 {
+	raw := r.Header.Get("X-Bundle-Version")
+	if raw == "" {
+		raw = r.URL.Query().Get("bundleVersion")
+	}
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func (s *Server) handleGatewayHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -320,16 +341,42 @@ func (s *Server) handleGatewayHeartbeat(w http.ResponseWriter, r *http.Request) 
 	if disabled == nil {
 		disabled = []models.DisabledCapabilityRef{}
 	}
-	writeJSON(w, http.StatusOK, heartbeatResp{DisabledCapabilities: disabled})
+	resp := heartbeatResp{DisabledCapabilities: disabled}
+
+	if s.Policies != nil {
+		clientVer := clientBundleVersion(r)
+		version, policies, err := s.Policies.BundleFor(r.Context(), gw.OrgID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "could not load policy bundle")
+			return
+		}
+		if clientVer < version {
+			bundle := &models.PolicyBundle{
+				Version:  version,
+				Policies: make([]models.BundlePolicy, 0, len(policies)),
+			}
+			for _, p := range policies {
+				bundle.Policies = append(bundle.Policies, models.BundlePolicy{
+					ID:         p.ID,
+					Name:       p.Name,
+					Action:     p.Action,
+					Expression: p.Expression,
+				})
+			}
+			resp.PolicyBundle = bundle
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type observationServer struct {
-	Name         string             `json:"name"`
-	Address      string             `json:"address"`
-	Transport    string             `json:"transport"`
-	Version      string             `json:"version"`
-	Metadata     json.RawMessage    `json:"metadata"`
-	Capabilities []observationCap   `json:"capabilities"`
+	Name         string           `json:"name"`
+	Address      string           `json:"address"`
+	Transport    string           `json:"transport"`
+	Version      string           `json:"version"`
+	Metadata     json.RawMessage  `json:"metadata"`
+	Capabilities []observationCap `json:"capabilities"`
 }
 
 type observationCap struct {
@@ -340,13 +387,25 @@ type observationCap struct {
 }
 
 type observationInvocation struct {
-	Server         string          `json:"server"`
-	CapabilityKind string          `json:"capabilityKind"`
-	CapabilityName string          `json:"capabilityName"`
-	Caller         json.RawMessage `json:"caller"`
-	Status         string          `json:"status"`
-	LatencyMs      int             `json:"latencyMs"`
-	At             time.Time       `json:"at"`
+	Server         string                `json:"server"`
+	CapabilityKind string                `json:"capabilityKind"`
+	CapabilityName string                `json:"capabilityName"`
+	Caller         json.RawMessage       `json:"caller"`
+	Status         string                `json:"status"`
+	LatencyMs      int                   `json:"latencyMs"`
+	At             time.Time             `json:"at"`
+	Decisions      []observationDecision `json:"decisions,omitempty"`
+}
+
+// observationDecision is a single per-policy verdict the shim ships with the
+// invocation when it has a policy bundle loaded. matched=true means the policy
+// fired; action is the policy's configured action ("deny" or "warn"). If the
+// shim flips status=denied on its side it ships the decisions too so the
+// server can persist them and skip the sweep for this row.
+type observationDecision struct {
+	PolicyID string `json:"policyId"`
+	Action   string `json:"action"`
+	Matched  bool   `json:"matched"`
 }
 
 type observationsReq struct {
@@ -397,7 +456,32 @@ func (s *Server) handleGatewayObservations(w http.ResponseWriter, r *http.Reques
 		if at.IsZero() {
 			at = time.Now()
 		}
-		if err := s.Discovery.InsertInvocation(r.Context(), gw.OrgID, sid, inv.CapabilityKind, inv.CapabilityName, inv.Caller, inv.Status, inv.LatencyMs, at); err != nil {
+
+		// If the shim shipped policy decisions, materialize them so we can
+		// persist alongside the invocation in one transaction. The presence
+		// of decision rows is the marker the sweep uses to skip already-
+		// evaluated invocations — so this is also how we honor "client did
+		// the eval, don't re-do it server-side".
+		var opts []store.InsertInvocationOption
+		if len(inv.Decisions) > 0 {
+			decs := make([]store.InvocationDecision, 0, len(inv.Decisions))
+			for _, d := range inv.Decisions {
+				pid, err := uuid.Parse(d.PolicyID)
+				if err != nil {
+					continue
+				}
+				decs = append(decs, store.InvocationDecision{
+					PolicyID: pid,
+					Action:   models.PolicyAction(d.Action),
+					Matched:  d.Matched,
+				})
+			}
+			if len(decs) > 0 {
+				opts = append(opts, store.WithDecisions(decs))
+			}
+		}
+
+		if err := s.Discovery.InsertInvocation(r.Context(), gw.OrgID, sid, inv.CapabilityKind, inv.CapabilityName, inv.Caller, inv.Status, inv.LatencyMs, at, opts...); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "insert invocation failed")
 			return
 		}

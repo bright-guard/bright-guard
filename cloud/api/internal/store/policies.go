@@ -162,6 +162,25 @@ func (p *Policies) Delete(ctx context.Context, orgID, id uuid.UUID) error {
 	return nil
 }
 
+// BundleFor returns the active (enabled) policies for an org along with the
+// org's current policy_bundle_version. Used by the heartbeat handler to decide
+// whether to ship a fresh bundle to a shim that's behind on its cached version.
+func (p *Policies) BundleFor(ctx context.Context, orgID uuid.UUID) (int64, []models.Policy, error) {
+	var version int64
+	if err := p.Pool.QueryRow(ctx,
+		`select policy_bundle_version from orgs where id = $1`, orgID).Scan(&version); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil, ErrNotFound
+		}
+		return 0, nil, err
+	}
+	policies, err := p.ListEnabledForOrg(ctx, orgID)
+	if err != nil {
+		return 0, nil, err
+	}
+	return version, policies, nil
+}
+
 // ListEnabledForOrg returns enabled policies for an org. Used by the sweep
 // goroutine, which compiles each per tick.
 func (p *Policies) ListEnabledForOrg(ctx context.Context, orgID uuid.UUID) ([]models.Policy, error) {
@@ -320,6 +339,11 @@ type InvocationContext struct {
 // ListInvocationsForSweep loads invocations strictly newer than the watermark,
 // up to `limit`. Each row is joined with its server + capability metadata so
 // the eval path doesn't need any extra round-trips per row.
+//
+// Rows that already have decisions persisted are skipped — the shim ships
+// decisions with each invocation when it has a bundle loaded, and the
+// presence of those rows is the marker that says "client already evaluated,
+// don't redo it server-side".
 func (p *Policies) ListInvocationsForSweep(
 	ctx context.Context, orgID uuid.UUID, after time.Time, limit int,
 ) ([]InvocationContext, error) {
@@ -332,6 +356,9 @@ func (p *Policies) ListInvocationsForSweep(
 		join mcp_servers s on s.id = i.mcp_server_id
 		left join mcp_capabilities c on c.id = i.capability_id
 		where i.org_id = $1 and i.at > $2
+		  and not exists (
+		    select 1 from mcp_invocation_decisions d where d.invocation_id = i.id
+		  )
 		order by i.at asc
 		limit $3`
 	rows, err := p.Pool.Query(ctx, q, orgID, after, limit)

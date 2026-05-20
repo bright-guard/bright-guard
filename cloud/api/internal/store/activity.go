@@ -34,14 +34,24 @@ type ActivityRowServer struct {
 }
 
 type ActivityRow struct {
-	ID             uuid.UUID         `json:"id"`
-	At             time.Time         `json:"at"`
-	MCPServer      ActivityRowServer `json:"mcpServer"`
-	CapabilityKind string            `json:"capabilityKind"`
-	CapabilityName string            `json:"capabilityName"`
-	Status         string            `json:"status"`
-	LatencyMs      int               `json:"latencyMs"`
-	Caller         json.RawMessage   `json:"caller"`
+	ID             uuid.UUID             `json:"id"`
+	At             time.Time             `json:"at"`
+	MCPServer      ActivityRowServer     `json:"mcpServer"`
+	CapabilityKind string                `json:"capabilityKind"`
+	CapabilityName string                `json:"capabilityName"`
+	Status         string                `json:"status"`
+	LatencyMs      int                   `json:"latencyMs"`
+	Caller         json.RawMessage       `json:"caller"`
+	Decisions      []ActivityRowDecision `json:"decisions"`
+}
+
+// ActivityRowDecision is the per-row chip payload — only matched=true rows are
+// returned so the frontend can show a "by Policy {name}" tag without a second
+// roundtrip.
+type ActivityRowDecision struct {
+	PolicyID   uuid.UUID `json:"policyId"`
+	PolicyName string    `json:"policyName"`
+	Action     string    `json:"action"`
 }
 
 type StatusTotals struct {
@@ -68,11 +78,11 @@ type TopCaller struct {
 }
 
 type Summary struct {
-	TotalInvocations  int                  `json:"totalInvocations"`
-	ByStatus          StatusTotals         `json:"byStatus"`
-	ByCapabilityKind  CapabilityKindTotals `json:"byCapabilityKind"`
-	TopCapabilities   []TopCapability      `json:"topCapabilities"`
-	TopCallers        []TopCaller          `json:"topCallers"`
+	TotalInvocations int                  `json:"totalInvocations"`
+	ByStatus         StatusTotals         `json:"byStatus"`
+	ByCapabilityKind CapabilityKindTotals `json:"byCapabilityKind"`
+	TopCapabilities  []TopCapability      `json:"topCapabilities"`
+	TopCallers       []TopCaller          `json:"topCallers"`
 }
 
 type cursorPayload struct {
@@ -192,13 +202,16 @@ func (a *Activity) List(ctx context.Context, orgID uuid.UUID, f ActivityFilter) 
 	defer rows.Close()
 
 	out := make([]ActivityRow, 0, limit)
+	ids := make([]uuid.UUID, 0, limit)
 	for rows.Next() {
 		var r ActivityRow
 		if err := rows.Scan(&r.ID, &r.At, &r.MCPServer.ID, &r.MCPServer.Name,
 			&r.CapabilityKind, &r.CapabilityName, &r.Status, &r.LatencyMs, &r.Caller); err != nil {
 			return nil, "", StatusTotals{}, err
 		}
+		r.Decisions = []ActivityRowDecision{}
 		out = append(out, r)
+		ids = append(ids, r.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", StatusTotals{}, err
@@ -209,8 +222,51 @@ func (a *Activity) List(ctx context.Context, orgID uuid.UUID, f ActivityFilter) 
 		last := out[limit-1]
 		nextCursor = EncodeCursor(last.At, last.ID)
 		out = out[:limit]
+		ids = ids[:limit]
+	}
+
+	if len(ids) > 0 {
+		decisionsByInv, err := a.matchedDecisions(ctx, orgID, ids)
+		if err != nil {
+			return nil, "", StatusTotals{}, err
+		}
+		for i := range out {
+			if decs, ok := decisionsByInv[out[i].ID]; ok {
+				out[i].Decisions = decs
+			}
+		}
 	}
 	return out, nextCursor, totals, nil
+}
+
+// matchedDecisions returns the per-invocation list of matched policy chips for
+// the given invocation ids. Single round-trip; only matched=true rows.
+func (a *Activity) matchedDecisions(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]ActivityRowDecision, error) {
+	const q = `
+		select d.invocation_id, d.policy_id, p.name, d.action
+		from mcp_invocation_decisions d
+		join policies p on p.id = d.policy_id
+		where p.org_id = $1 and d.invocation_id = any($2::uuid[]) and d.matched = true
+		order by d.at asc`
+	rows, err := a.Pool.Query(ctx, q, orgID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID][]ActivityRowDecision{}
+	for rows.Next() {
+		var invID, polID uuid.UUID
+		var name, action string
+		if err := rows.Scan(&invID, &polID, &name, &action); err != nil {
+			return nil, err
+		}
+		out[invID] = append(out[invID], ActivityRowDecision{
+			PolicyID:   polID,
+			PolicyName: name,
+			Action:     action,
+		})
+	}
+	return out, rows.Err()
 }
 
 func (a *Activity) Summary(ctx context.Context, orgID uuid.UUID, from, to time.Time) (Summary, error) {

@@ -286,19 +286,34 @@ export default function ActivityPage() {
                   >
                     {statusLabel(r.status)}
                   </span>
-                  {r.decisions?.map((d) => (
-                    <span
-                      key={d.policyId}
-                      className={`ml-2 inline-flex rounded-md border px-1.5 py-0.5 text-[10px] uppercase ${
-                        d.action === "deny"
-                          ? "border-rose-300 bg-rose-50 text-rose-700"
-                          : "border-amber-300 bg-amber-50 text-amber-700"
-                      }`}
-                      title={`would have been ${d.action === "deny" ? "blocked" : "warned"} by policy "${d.policyName}"`}
-                    >
-                      by {d.policyName}
-                    </span>
-                  ))}
+                  {r.decisions?.map((d) => {
+                    const enforced =
+                      r.status === "denied" && d.action === "deny";
+                    return (
+                      <span
+                        key={d.policyId}
+                        className={`ml-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase ${
+                          d.action === "deny"
+                            ? "border-rose-300 bg-rose-50 text-rose-700"
+                            : "border-amber-300 bg-amber-50 text-amber-700"
+                        }`}
+                        title={
+                          enforced
+                            ? `blocked by policy "${d.policyName}"`
+                            : `would have been ${
+                                d.action === "deny" ? "blocked" : "warned"
+                              } by policy "${d.policyName}"`
+                        }
+                      >
+                        {enforced && (
+                          <span className="rounded bg-rose-700 px-1 py-px text-[8px] font-semibold text-white">
+                            ENFORCED
+                          </span>
+                        )}
+                        by {d.policyName}
+                      </span>
+                    );
+                  })}
                 </td>
                 <td className="px-4 py-3 text-slate-500">{r.latencyMs}ms</td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-500">

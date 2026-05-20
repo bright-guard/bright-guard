@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -24,12 +26,12 @@ type capability struct {
 }
 
 type server struct {
-	Name         string                 `yaml:"name" json:"name"`
-	Address      string                 `yaml:"address" json:"address"`
-	Transport    string                 `yaml:"transport" json:"transport"`
-	Version      string                 `yaml:"version" json:"version"`
-	Metadata     map[string]any         `yaml:"metadata" json:"metadata"`
-	Capabilities []capability           `yaml:"capabilities" json:"capabilities"`
+	Name         string         `yaml:"name" json:"name"`
+	Address      string         `yaml:"address" json:"address"`
+	Transport    string         `yaml:"transport" json:"transport"`
+	Version      string         `yaml:"version" json:"version"`
+	Metadata     map[string]any `yaml:"metadata" json:"metadata"`
+	Capabilities []capability   `yaml:"capabilities" json:"capabilities"`
 }
 
 type shimConfig struct {
@@ -41,6 +43,8 @@ type registerResp struct {
 	Credential string `json:"credential"`
 }
 
+// observationsBody mirrors cloud/api observationsReq. The decisions slice is
+// only attached when the shim's bundle is live and a policy matched.
 type observationsBody struct {
 	Servers     []obsServer     `json:"servers"`
 	Invocations []obsInvocation `json:"invocations"`
@@ -63,6 +67,38 @@ type obsInvocation struct {
 	Status         string         `json:"status"`
 	LatencyMs      int            `json:"latencyMs"`
 	At             time.Time      `json:"at"`
+	Decisions      []obsDecision  `json:"decisions,omitempty"`
+}
+
+type obsDecision struct {
+	PolicyID string `json:"policyId"`
+	Action   string `json:"action"`
+	Matched  bool   `json:"matched"`
+}
+
+// heartbeatResp matches cloud/api heartbeatResp. PolicyBundle is nil/omitted
+// when the server thinks we're already up to date.
+type heartbeatResp struct {
+	DisabledCapabilities []disabledCapabilityRef `json:"disabledCapabilities"`
+	PolicyBundle         *policyBundleWire       `json:"policyBundle"`
+}
+
+type disabledCapabilityRef struct {
+	ServerName string `json:"serverName"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type policyBundleWire struct {
+	Version  int64              `json:"version"`
+	Policies []bundlePolicyWire `json:"policies"`
+}
+
+type bundlePolicyWire struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Action     string `json:"action"`
+	Expression string `json:"expression"`
 }
 
 func main() {
@@ -82,6 +118,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("enroll: %v", err)
 	}
+
+	policies := newPolicyCache()
 	log.Printf("shim ready: control_plane=%s servers=%d", controlPlane, len(cfg.Servers))
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -89,19 +127,31 @@ func main() {
 	defer tick.Stop()
 
 	// First tick immediately so verification doesn't have to wait 30s.
-	if err := emit(controlPlane, credential, cfg, rng); err != nil {
+	if err := emit(controlPlane, credential, cfg, policies, rng); err != nil {
 		log.Printf("tick error: %v", err)
 	}
 	for range tick.C {
-		if err := emit(controlPlane, credential, cfg, rng); err != nil {
+		if err := emit(controlPlane, credential, cfg, policies, rng); err != nil {
 			log.Printf("tick error: %v", err)
 		}
 	}
 }
 
-func emit(controlPlane, credential string, cfg *shimConfig, rng *rand.Rand) error {
-	if err := postNoBody(controlPlane+"/v1/gateway/heartbeat", credential); err != nil {
+func emit(controlPlane, credential string, cfg *shimConfig, policies *policyCache, rng *rand.Rand) error {
+	disabled, bundle, err := heartbeat(controlPlane, credential, policies.version())
+	if err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
+	}
+	if bundle != nil {
+		// applyBundle is fail-closed: if compile fails for the new bundle we
+		// keep the previous one active. Never drop enforcement because of a
+		// bad new bundle.
+		policies.apply(bundle)
+	}
+
+	disabledSet := map[string]bool{}
+	for _, d := range disabled {
+		disabledSet[d.ServerName+"|"+d.Kind+"|"+d.Name] = true
 	}
 
 	body := observationsBody{}
@@ -116,6 +166,8 @@ func emit(controlPlane, credential string, cfg *shimConfig, rng *rand.Rand) erro
 		})
 	}
 
+	progs := policies.programs()
+
 	n := 1 + rng.Intn(3)
 	for i := 0; i < n; i++ {
 		s := cfg.Servers[rng.Intn(len(cfg.Servers))]
@@ -127,14 +179,38 @@ func emit(controlPlane, credential string, cfg *shimConfig, rng *rand.Rand) erro
 		if rng.Intn(10) == 0 {
 			status = "error"
 		}
+		caller := map[string]any{"agent": "demo-agent"}
+
+		// First denial source: control-plane-set disabled capabilities.
+		if disabledSet[s.Name+"|"+c.Kind+"|"+c.Name] {
+			status = "denied"
+		}
+
+		// Second denial source: CEL policy bundle. Evaluate every policy;
+		// record matches; deny-action policies flip status to "denied" if not
+		// already denied.
+		decisions := evaluatePolicies(progs, evalContext{
+			caller:     caller,
+			server:     map[string]string{"name": s.Name, "transport": s.Transport, "address": s.Address},
+			capability: map[string]string{"kind": c.Kind, "name": c.Name, "description": c.Description},
+			at:         time.Now().UTC(),
+			status:     status,
+		})
+		for _, d := range decisions {
+			if d.Action == "deny" && status != "denied" {
+				status = "denied"
+			}
+		}
+
 		body.Invocations = append(body.Invocations, obsInvocation{
 			Server:         s.Name,
 			CapabilityKind: c.Kind,
 			CapabilityName: c.Name,
-			Caller:         map[string]any{"agent": "demo-agent"},
+			Caller:         caller,
 			Status:         status,
 			LatencyMs:      10 + rng.Intn(450),
 			At:             time.Now().UTC(),
+			Decisions:      decisions,
 		})
 	}
 
@@ -157,26 +233,39 @@ func emit(controlPlane, credential string, cfg *shimConfig, rng *rand.Rand) erro
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("observations: %s %s", resp.Status, string(b))
 	}
-	log.Printf("tick: heartbeat ok, %d servers, %d invocations", len(body.Servers), len(body.Invocations))
+	log.Printf("tick: heartbeat ok, bundle_version=%d, %d servers, %d invocations",
+		policies.version(), len(body.Servers), len(body.Invocations))
 	return nil
 }
 
-func postNoBody(url, credential string) error {
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+func heartbeat(controlPlane, credential string, bundleVersion int64) ([]disabledCapabilityRef, *policyBundleWire, error) {
+	req, err := http.NewRequest(http.MethodPost, controlPlane+"/v1/gateway/heartbeat", nil)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+credential)
+	req.Header.Set("X-Bundle-Version", strconv.FormatInt(bundleVersion, 10))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s", resp.Status, string(b))
+		return nil, nil, fmt.Errorf("%s: %s", resp.Status, string(b))
 	}
-	return nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(body) == 0 {
+		return nil, nil, nil
+	}
+	var out heartbeatResp
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, nil, err
+	}
+	return out.DisabledCapabilities, out.PolicyBundle, nil
 }
 
 func ensureCredential(controlPlane, stateDir string) (string, error) {
@@ -249,4 +338,55 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// policyCache holds the compiled bundle and its version. Goroutine-safe so
+// future eval paths could read while heartbeat updates concurrently.
+type policyCache struct {
+	mu    sync.RWMutex
+	ver   int64
+	progs []compiledPolicy
+}
+
+func newPolicyCache() *policyCache { return &policyCache{} }
+
+func (c *policyCache) version() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ver
+}
+
+func (c *policyCache) programs() []compiledPolicy {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.progs) == 0 {
+		return nil
+	}
+	cp := make([]compiledPolicy, len(c.progs))
+	copy(cp, c.progs)
+	return cp
+}
+
+// apply swaps in a new bundle. Fail-closed: if any policy fails to compile
+// we keep the previous bundle live. We compile every policy up-front to spot
+// errors; on partial failure we log and abort the swap.
+func (c *policyCache) apply(b *policyBundleWire) {
+	if b == nil {
+		return
+	}
+	progs := make([]compiledPolicy, 0, len(b.Policies))
+	for _, p := range b.Policies {
+		cp, err := compilePolicy(p)
+		if err != nil {
+			log.Printf("policy bundle v%d: compile %s (%s) failed: %v — keeping previous bundle",
+				b.Version, p.ID, p.Name, err)
+			return
+		}
+		progs = append(progs, cp)
+	}
+	c.mu.Lock()
+	c.ver = b.Version
+	c.progs = progs
+	c.mu.Unlock()
+	log.Printf("policy bundle v%d applied: %d programs", b.Version, len(progs))
 }

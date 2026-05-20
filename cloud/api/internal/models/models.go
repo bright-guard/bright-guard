@@ -183,8 +183,8 @@ type OrgCallerTopServer struct {
 
 type OrgCallerDetail struct {
 	OrgCaller
-	TopServers       []OrgCallerTopServer `json:"topServers"`
-	RecentInvocations []MCPInvocation     `json:"recentInvocations"`
+	TopServers        []OrgCallerTopServer `json:"topServers"`
+	RecentInvocations []MCPInvocation      `json:"recentInvocations"`
 }
 
 // Invitation is an outstanding/decided org invite addressed to a single email.
@@ -244,17 +244,17 @@ const (
 
 // Policy is a CEL-based rule evaluated against observed invocations.
 type Policy struct {
-	ID            uuid.UUID    `json:"id"`
-	OrgID         uuid.UUID    `json:"orgId"`
-	Name          string       `json:"name"`
-	Description   string       `json:"description"`
-	Expression    string       `json:"expression"`
-	Action        PolicyAction `json:"action"`
-	Enabled       bool         `json:"enabled"`
-	CreatedBy     uuid.UUID    `json:"createdBy"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	UpdatedAt     time.Time    `json:"updatedAt"`
-	Last24hMatches int         `json:"last24hMatches"`
+	ID             uuid.UUID    `json:"id"`
+	OrgID          uuid.UUID    `json:"orgId"`
+	Name           string       `json:"name"`
+	Description    string       `json:"description"`
+	Expression     string       `json:"expression"`
+	Action         PolicyAction `json:"action"`
+	Enabled        bool         `json:"enabled"`
+	CreatedBy      uuid.UUID    `json:"createdBy"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+	Last24hMatches int          `json:"last24hMatches"`
 }
 
 // Decision is a per-invocation, per-policy verdict row.
@@ -265,4 +265,23 @@ type Decision struct {
 	Matched      bool         `json:"matched"`
 	Action       PolicyAction `json:"action"`
 	At           time.Time    `json:"at"`
+}
+
+// BundlePolicy is the minimal shape shipped to a gateway / shim — strips
+// everything the local CEL evaluator doesn't need (created_by, timestamps,
+// match counters, …) to keep the wire payload tight.
+type BundlePolicy struct {
+	ID         uuid.UUID    `json:"id"`
+	Name       string       `json:"name"`
+	Action     PolicyAction `json:"action"`
+	Expression string       `json:"expression"`
+}
+
+// PolicyBundle is the heartbeat-response payload. Version is the org's
+// monotonically increasing policy_bundle_version; the shim sends its cached
+// version via X-Bundle-Version and the server only includes Policies when
+// the client is behind.
+type PolicyBundle struct {
+	Version  int64          `json:"version"`
+	Policies []BundlePolicy `json:"policies"`
 }

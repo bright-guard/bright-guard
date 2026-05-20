@@ -252,6 +252,144 @@ func TestPolicies_SweepWatermarkRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPolicies_BundleFor_VersionAndContents(t *testing.T) {
+	s := newPoliciesTestSetup(t)
+	ctx := context.Background()
+
+	// Pristine org with no policies: version 0, empty slice.
+	v0, list, err := s.policies.BundleFor(ctx, s.orgID)
+	if err != nil {
+		t.Fatalf("BundleFor empty: %v", err)
+	}
+	if v0 != 0 {
+		t.Errorf("expected initial version 0, got %d", v0)
+	}
+	if len(list) != 0 {
+		t.Errorf("expected no policies, got %d", len(list))
+	}
+
+	// Create two policies — trigger should bump version twice.
+	for i, name := range []string{"p-a", "p-b"} {
+		if _, err := s.policies.Create(ctx, PolicyCreate{
+			OrgID: s.orgID, CreatedBy: s.userID, Name: name,
+			Expression: `status == "ok"`, Action: models.PolicyActionDeny,
+			Enabled: i == 0,
+		}); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	v2, list2, err := s.policies.BundleFor(ctx, s.orgID)
+	if err != nil {
+		t.Fatalf("BundleFor after create: %v", err)
+	}
+	if v2 != 2 {
+		t.Errorf("expected version 2 after two creates, got %d", v2)
+	}
+	// Only enabled policies make it into the bundle.
+	if len(list2) != 1 {
+		t.Errorf("expected 1 enabled policy, got %d", len(list2))
+	}
+	if list2[0].Name != "p-a" {
+		t.Errorf("expected p-a in bundle, got %q", list2[0].Name)
+	}
+}
+
+func TestPolicies_BundleVersionBumpsOnCRUD(t *testing.T) {
+	s := newPoliciesTestSetup(t)
+	ctx := context.Background()
+
+	readVer := func() int64 {
+		v, _, err := s.policies.BundleFor(ctx, s.orgID)
+		if err != nil {
+			t.Fatalf("BundleFor: %v", err)
+		}
+		return v
+	}
+
+	if v := readVer(); v != 0 {
+		t.Fatalf("initial version = %d, want 0", v)
+	}
+
+	// Insert bumps.
+	pol, err := s.policies.Create(ctx, PolicyCreate{
+		OrgID: s.orgID, CreatedBy: s.userID, Name: "v-test",
+		Expression: `status == "ok"`, Action: models.PolicyActionDeny, Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v := readVer(); v != 1 {
+		t.Errorf("after insert: version = %d, want 1", v)
+	}
+
+	// Update bumps.
+	disabled := false
+	if _, err := s.policies.Update(ctx, s.orgID, pol.ID, PolicyPatch{Enabled: &disabled}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if v := readVer(); v != 2 {
+		t.Errorf("after update: version = %d, want 2", v)
+	}
+
+	// Delete bumps.
+	if err := s.policies.Delete(ctx, s.orgID, pol.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if v := readVer(); v != 3 {
+		t.Errorf("after delete: version = %d, want 3", v)
+	}
+}
+
+func TestInsertInvocation_WithDecisionsWritesBothInOneTx(t *testing.T) {
+	s := newPoliciesTestSetup(t)
+	ctx := context.Background()
+
+	pol, err := s.policies.Create(ctx, PolicyCreate{
+		OrgID: s.orgID, CreatedBy: s.userID, Name: "p",
+		Expression: `capability.name == "create_issue"`,
+		Action:     models.PolicyActionDeny, Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	at := time.Now().UTC()
+	if err := s.discovery.InsertInvocation(ctx,
+		s.orgID, s.serverID, "tool", "create_issue",
+		json.RawMessage(`{}`), "denied", 12, at,
+		WithDecisions([]InvocationDecision{
+			{PolicyID: pol.ID, Action: models.PolicyActionDeny, Matched: true},
+		}),
+	); err != nil {
+		t.Fatalf("InsertInvocation with decisions: %v", err)
+	}
+
+	// Decision row should be present, joined back via DecisionsForInvocations.
+	var invID uuid.UUID
+	if err := s.discovery.Pool.QueryRow(ctx,
+		`select id from mcp_invocations where org_id = $1`, s.orgID).Scan(&invID); err != nil {
+		t.Fatalf("query inv id: %v", err)
+	}
+	got, err := s.policies.DecisionsForInvocations(ctx, s.orgID, []uuid.UUID{invID})
+	if err != nil {
+		t.Fatalf("DecisionsForInvocations: %v", err)
+	}
+	if len(got[invID]) != 1 || got[invID][0].PolicyID != pol.ID {
+		t.Fatalf("expected one decision for the new invocation, got %+v", got)
+	}
+
+	// Sweep loader must skip rows already having decisions.
+	invs, err := s.policies.ListInvocationsForSweep(ctx, s.orgID, time.Unix(0, 0).UTC(), 100)
+	if err != nil {
+		t.Fatalf("ListInvocationsForSweep: %v", err)
+	}
+	for _, inv := range invs {
+		if inv.ID == invID {
+			t.Errorf("sweep should skip invocations that already have decisions")
+		}
+	}
+}
+
 func TestPolicies_DuplicateNameRejected(t *testing.T) {
 	s := newPoliciesTestSetup(t)
 	ctx := context.Background()

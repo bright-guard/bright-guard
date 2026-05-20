@@ -155,7 +155,48 @@ func (d *Discovery) ListDisabledCapabilitiesForGateway(ctx context.Context, gate
 	return out, rows.Err()
 }
 
-func (d *Discovery) InsertInvocation(ctx context.Context, orgID, mcpServerID uuid.UUID, capabilityKind, capabilityName string, caller json.RawMessage, status string, latencyMs int, at time.Time) error {
+// InvocationDecision is the per-policy verdict a gateway/shim ships alongside
+// a new invocation in the observations payload. The control plane persists
+// these into mcp_invocation_decisions in the same transaction as the
+// invocation row itself — that way the sweep can detect "already evaluated"
+// via the presence of decision rows and skip them.
+type InvocationDecision struct {
+	PolicyID uuid.UUID
+	Action   models.PolicyAction
+	Matched  bool
+}
+
+// InsertInvocationOpts is a functional-options bag so we can extend the
+// invocation insert path additively. Existing callers can keep the old
+// no-options call site unchanged.
+type InsertInvocationOpts struct {
+	decisions []InvocationDecision
+}
+
+// InsertInvocationOption applies to InsertInvocationOpts.
+type InsertInvocationOption func(*InsertInvocationOpts)
+
+// WithDecisions attaches a slice of decisions (matched + action per policy)
+// to the invocation insert. Empty / nil slices are a no-op.
+func WithDecisions(decs []InvocationDecision) InsertInvocationOption {
+	return func(o *InsertInvocationOpts) { o.decisions = decs }
+}
+
+func (d *Discovery) InsertInvocation(
+	ctx context.Context,
+	orgID, mcpServerID uuid.UUID,
+	capabilityKind, capabilityName string,
+	caller json.RawMessage,
+	status string,
+	latencyMs int,
+	at time.Time,
+	opts ...InsertInvocationOption,
+) error {
+	o := InsertInvocationOpts{}
+	for _, fn := range opts {
+		fn(&o)
+	}
+
 	// Try to attach a capability id; if none matches, leave NULL.
 	var capID *uuid.UUID
 	const capQ = `select id from mcp_capabilities where mcp_server_id = $1 and kind = $2 and name = $3`
@@ -167,11 +208,48 @@ func (d *Discovery) InsertInvocation(ctx context.Context, orgID, mcpServerID uui
 		return err
 	}
 
-	const q = `
+	// Fast path: no decisions → single insert, no transaction overhead.
+	if len(o.decisions) == 0 {
+		const q = `
+			insert into mcp_invocations (org_id, mcp_server_id, capability_id, capability_kind, capability_name, caller, status, latency_ms, at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		_, err = d.Pool.Exec(ctx, q, orgID, mcpServerID, capID, capabilityKind, capabilityName, jsonOrEmpty(caller), status, latencyMs, at)
+		return err
+	}
+
+	// With decisions: write invocation + decisions in one transaction so they
+	// either both land or neither — the sweep uses the decisions row's
+	// presence as a "skip" marker, and a partial write would mis-evaluate.
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var invID uuid.UUID
+	const insertInv = `
 		insert into mcp_invocations (org_id, mcp_server_id, capability_id, capability_kind, capability_name, caller, status, latency_ms, at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
-	_, err = d.Pool.Exec(ctx, q, orgID, mcpServerID, capID, capabilityKind, capabilityName, jsonOrEmpty(caller), status, latencyMs, at)
-	return err
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		returning id`
+	if err := tx.QueryRow(ctx, insertInv,
+		orgID, mcpServerID, capID, capabilityKind, capabilityName,
+		jsonOrEmpty(caller), status, latencyMs, at,
+	).Scan(&invID); err != nil {
+		return err
+	}
+
+	const insertDec = `
+		insert into mcp_invocation_decisions (invocation_id, policy_id, matched, action)
+		values ($1, $2, $3, $4)
+		on conflict (invocation_id, policy_id) do update
+		  set matched = excluded.matched, action = excluded.action, at = now()`
+	for _, dec := range o.decisions {
+		if _, err := tx.Exec(ctx, insertDec, invID, dec.PolicyID, dec.Matched, string(dec.Action)); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (d *Discovery) ListServers(ctx context.Context, orgID uuid.UUID) ([]models.MCPServerWithCounts, error) {

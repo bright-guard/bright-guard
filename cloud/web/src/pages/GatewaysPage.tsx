@@ -38,7 +38,9 @@ export default function GatewaysPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400"
+          disabled={!activeOrgId}
+          title={activeOrgId ? undefined : "Select or create an org first"}
+          className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-400 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           Add gateway
         </button>
