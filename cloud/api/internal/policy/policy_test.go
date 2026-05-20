@@ -184,6 +184,70 @@ func TestEvaluate_MissingCallerKeyDoesNotMatch(t *testing.T) {
 	}
 }
 
+// TestEvaluate_WorkloadScope confirms the workload.* scope evaluates with
+// present data (cluster=="prod" matches) and absent data (no Workload map →
+// cluster reads as "" and the same expression does not match). Mirrors the
+// posture the prod-to-public template depends on.
+func TestEvaluate_WorkloadScope(t *testing.T) {
+	e := newEngine(t)
+	prg, err := e.Compile(`workload.cluster == "prod"`)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	got, err := prg.Evaluate(context.Background(), InvocationContext{
+		Workload: map[string]string{"cluster": "prod"},
+	})
+	if err != nil {
+		t.Fatalf("eval present: %v", err)
+	}
+	if !got {
+		t.Errorf("workload.cluster=prod expected to match")
+	}
+	// Absent workload context → cluster collapses to "" → no match, no error.
+	got, err = prg.Evaluate(context.Background(), InvocationContext{})
+	if err != nil {
+		t.Fatalf("eval absent: %v", err)
+	}
+	if got {
+		t.Errorf("absent workload should not match cluster==prod")
+	}
+}
+
+// TestEvaluate_NetworkScope mirrors workload but for network.subnet — the
+// load-bearing field for the corp-net template.
+func TestEvaluate_NetworkScope(t *testing.T) {
+	e := newEngine(t)
+	prg, err := e.Compile(`network.subnet != "" && !network.subnet.startsWith("10.")`)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	// Public subnet → match.
+	got, err := prg.Evaluate(context.Background(), InvocationContext{
+		Network: map[string]string{"subnet": "172.16.0.0/16"},
+	})
+	if err != nil {
+		t.Fatalf("eval public: %v", err)
+	}
+	if !got {
+		t.Errorf("172.16/16 expected to match outside-corp-net")
+	}
+	// Internal subnet → no match.
+	got, _ = prg.Evaluate(context.Background(), InvocationContext{
+		Network: map[string]string{"subnet": "10.0.1.0/24"},
+	})
+	if got {
+		t.Errorf("10.0/24 should not match outside-corp-net")
+	}
+	// Absent network context → subnet=="" filter short-circuits to false.
+	got, err = prg.Evaluate(context.Background(), InvocationContext{})
+	if err != nil {
+		t.Fatalf("eval absent: %v", err)
+	}
+	if got {
+		t.Errorf("absent network should not match outside-corp-net")
+	}
+}
+
 func TestEvaluate_EmptyCallerJSONIsSafe(t *testing.T) {
 	e := newEngine(t)
 	prg, err := e.Compile(`status == "ok"`)

@@ -451,6 +451,28 @@ type observationInvocation struct {
 	LatencyMs      int                   `json:"latencyMs"`
 	At             time.Time             `json:"at"`
 	Decisions      []observationDecision `json:"decisions,omitempty"`
+	// Wave N+9 (UC6/UC7) optional per-invocation subject + network context.
+	// Both objects + all sub-fields are optional — pre-N+9 shims continue to
+	// send the legacy shape and the persistence path stores nulls.
+	Workload *observationWorkload `json:"workload,omitempty"`
+	Network  *observationNetwork  `json:"network,omitempty"`
+}
+
+// observationWorkload is the per-invocation subject context (UC6). All fields
+// optional; empty strings are treated the same as omitted.
+type observationWorkload struct {
+	Host       string `json:"host"`
+	Cluster    string `json:"cluster"`
+	Namespace  string `json:"namespace"`
+	AgentClass string `json:"agentClass"`
+}
+
+// observationNetwork is the per-invocation network position (UC7).
+type observationNetwork struct {
+	Subnet   string `json:"subnet"`
+	VPC      string `json:"vpc"`
+	Zone     string `json:"zone"`
+	CallerIP string `json:"callerIp"`
 }
 
 // observationDecision is a single per-policy verdict the shim ships with the
@@ -519,6 +541,25 @@ func (s *Server) handleGatewayObservations(w http.ResponseWriter, r *http.Reques
 		// evaluated invocations — so this is also how we honor "client did
 		// the eval, don't re-do it server-side".
 		var opts []store.InsertInvocationOption
+		// Wave N+9 (UC6/UC7): forward workload + network context when the
+		// shim attached them. Both objects are optional; empty sub-fields
+		// degrade to NULL inserts.
+		if inv.Workload != nil {
+			opts = append(opts, store.WithWorkload(&store.InvocationWorkload{
+				Host:       inv.Workload.Host,
+				Cluster:    inv.Workload.Cluster,
+				Namespace:  inv.Workload.Namespace,
+				AgentClass: inv.Workload.AgentClass,
+			}))
+		}
+		if inv.Network != nil {
+			opts = append(opts, store.WithNetwork(&store.InvocationNetwork{
+				Subnet:   inv.Network.Subnet,
+				VPC:      inv.Network.VPC,
+				Zone:     inv.Network.Zone,
+				CallerIP: inv.Network.CallerIP,
+			}))
+		}
 		if len(inv.Decisions) > 0 {
 			decs := make([]store.InvocationDecision, 0, len(inv.Decisions))
 			for _, d := range inv.Decisions {

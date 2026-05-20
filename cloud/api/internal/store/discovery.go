@@ -171,6 +171,8 @@ type InvocationDecision struct {
 // no-options call site unchanged.
 type InsertInvocationOpts struct {
 	decisions []InvocationDecision
+	workload  *InvocationWorkload
+	network   *InvocationNetwork
 }
 
 // InsertInvocationOption applies to InsertInvocationOpts.
@@ -180,6 +182,34 @@ type InsertInvocationOption func(*InsertInvocationOpts)
 // to the invocation insert. Empty / nil slices are a no-op.
 func WithDecisions(decs []InvocationDecision) InsertInvocationOption {
 	return func(o *InsertInvocationOpts) { o.decisions = decs }
+}
+
+// InvocationWorkload is the per-invocation subject context the gateway / shim
+// reports (UC6). All fields optional; empty strings persist as nulls so the
+// CEL env reads them as "".
+type InvocationWorkload struct {
+	Host       string
+	Cluster    string
+	Namespace  string
+	AgentClass string
+}
+
+// InvocationNetwork is the per-invocation network position (UC7).
+type InvocationNetwork struct {
+	Subnet   string
+	VPC      string
+	Zone     string
+	CallerIP string
+}
+
+// WithWorkload attaches the per-invocation subject context. Nil is a no-op.
+func WithWorkload(w *InvocationWorkload) InsertInvocationOption {
+	return func(o *InsertInvocationOpts) { o.workload = w }
+}
+
+// WithNetwork attaches the per-invocation network context. Nil is a no-op.
+func WithNetwork(n *InvocationNetwork) InsertInvocationOption {
+	return func(o *InsertInvocationOpts) { o.network = n }
 }
 
 func (d *Discovery) InsertInvocation(
@@ -208,12 +238,26 @@ func (d *Discovery) InsertInvocation(
 		return err
 	}
 
+	// Wave N+9: optional workload + network context columns. Empty / unset
+	// values insert as NULL so partial-context invocations stay queryable.
+	wHost, wCluster, wNamespace, wAgentClass := nullableWorkload(o.workload)
+	nSubnet, nVPC, nZone, nCallerIP := nullableNetwork(o.network)
+
 	// Fast path: no decisions → single insert, no transaction overhead.
 	if len(o.decisions) == 0 {
 		const q = `
-			insert into mcp_invocations (org_id, mcp_server_id, capability_id, capability_kind, capability_name, caller, status, latency_ms, at)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
-		_, err = d.Pool.Exec(ctx, q, orgID, mcpServerID, capID, capabilityKind, capabilityName, jsonOrEmpty(caller), status, latencyMs, at)
+			insert into mcp_invocations (
+				org_id, mcp_server_id, capability_id, capability_kind, capability_name,
+				caller, status, latency_ms, at,
+				workload_host, workload_cluster, workload_namespace, agent_class,
+				network_subnet, network_vpc, network_zone, caller_ip
+			)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
+		_, err = d.Pool.Exec(ctx, q, orgID, mcpServerID, capID, capabilityKind, capabilityName,
+			jsonOrEmpty(caller), status, latencyMs, at,
+			wHost, wCluster, wNamespace, wAgentClass,
+			nSubnet, nVPC, nZone, nCallerIP,
+		)
 		return err
 	}
 
@@ -228,12 +272,19 @@ func (d *Discovery) InsertInvocation(
 
 	var invID uuid.UUID
 	const insertInv = `
-		insert into mcp_invocations (org_id, mcp_server_id, capability_id, capability_kind, capability_name, caller, status, latency_ms, at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		insert into mcp_invocations (
+			org_id, mcp_server_id, capability_id, capability_kind, capability_name,
+			caller, status, latency_ms, at,
+			workload_host, workload_cluster, workload_namespace, agent_class,
+			network_subnet, network_vpc, network_zone, caller_ip
+		)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		returning id`
 	if err := tx.QueryRow(ctx, insertInv,
 		orgID, mcpServerID, capID, capabilityKind, capabilityName,
 		jsonOrEmpty(caller), status, latencyMs, at,
+		wHost, wCluster, wNamespace, wAgentClass,
+		nSubnet, nVPC, nZone, nCallerIP,
 	).Scan(&invID); err != nil {
 		return err
 	}
@@ -447,4 +498,29 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 		det.Invocations = append(det.Invocations, inv)
 	}
 	return det, irows.Err()
+}
+
+// nullableWorkload turns an optional workload bag into four *string values
+// suitable for direct pgx parameter binding — empty strings (and a nil bag)
+// become NULL so the mcp_invocations columns stay sparse for older / partial
+// invocations.
+func nullableWorkload(w *InvocationWorkload) (*string, *string, *string, *string) {
+	if w == nil {
+		return nil, nil, nil, nil
+	}
+	return strOrNil(w.Host), strOrNil(w.Cluster), strOrNil(w.Namespace), strOrNil(w.AgentClass)
+}
+
+func nullableNetwork(n *InvocationNetwork) (*string, *string, *string, *string) {
+	if n == nil {
+		return nil, nil, nil, nil
+	}
+	return strOrNil(n.Subnet), strOrNil(n.VPC), strOrNil(n.Zone), strOrNil(n.CallerIP)
+}
+
+func strOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

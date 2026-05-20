@@ -1,10 +1,18 @@
 package main
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
 )
+
+// newDeterministicRNG returns a math/rand source seeded with a fixed value so
+// the synthesiseContext distribution test stays reproducible. Local to the
+// test file — no production code path should rely on a fixed seed.
+func newDeterministicRNG() *rand.Rand {
+	return rand.New(rand.NewSource(42))
+}
 
 func TestCompilePolicy_ValidExpressions(t *testing.T) {
 	// Same set the server-side policy package tests against — verifies
@@ -453,6 +461,107 @@ func TestCallerSignature_StableAcrossKeyOrder(t *testing.T) {
 	b := callerSignature(map[string]any{"user": "alice", "agent": "demo"})
 	if a != b {
 		t.Errorf("signature differs with key order: %s vs %s", a, b)
+	}
+}
+
+// TestEvaluatePolicies_WorkloadScope_Present mirrors the API-side
+// TestEvaluate_WorkloadScope test — same expression, same expected verdict —
+// to assert the byte-for-byte env match also produces the same eval semantics
+// for the new UC6 scope.
+func TestEvaluatePolicies_WorkloadScope_Present(t *testing.T) {
+	cp, err := compilePolicy(bundlePolicyWire{
+		ID: "uc6", Name: "uc6", Action: "deny",
+		Expression: `workload.cluster == "prod"`,
+	})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		workload: map[string]any{"cluster": "prod"},
+		at:       time.Now().UTC(),
+		status:   "ok",
+	})
+	if len(decs) != 1 {
+		t.Fatalf("workload.cluster==prod: want 1 decision, got %d", len(decs))
+	}
+}
+
+// TestEvaluatePolicies_WorkloadScope_Absent confirms a policy referencing
+// workload.* does not match (and does not error) when no workload context is
+// supplied. This is the load-bearing behaviour for backwards-compat with
+// older invocations that don't carry UC6 metadata.
+func TestEvaluatePolicies_WorkloadScope_Absent(t *testing.T) {
+	cp, err := compilePolicy(bundlePolicyWire{
+		ID: "uc6", Name: "uc6", Action: "deny",
+		Expression: `workload.cluster == "prod"`,
+	})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		at:     time.Now().UTC(),
+		status: "ok",
+	})
+	if len(decs) != 0 {
+		t.Errorf("absent workload should not match, got %+v", decs)
+	}
+}
+
+// TestEvaluatePolicies_NetworkScope verifies the UC7 corp-net template on the
+// shim — same shape as the API-side test, asserts the shim's eval honors both
+// the present + absent paths.
+func TestEvaluatePolicies_NetworkScope(t *testing.T) {
+	cp, err := compilePolicy(bundlePolicyWire{
+		ID: "uc7", Name: "uc7", Action: "deny",
+		Expression: `network.subnet != "" && !network.subnet.startsWith("10.")`,
+	})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	// Public subnet → match.
+	decs := evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		network: map[string]any{"subnet": "172.16.0.0/16"},
+		at:      time.Now().UTC(),
+		status:  "ok",
+	})
+	if len(decs) != 1 {
+		t.Errorf("172.16/16: want 1 decision, got %+v", decs)
+	}
+	// Internal subnet → no match.
+	decs = evaluatePolicies([]compiledPolicy{cp}, evalContext{
+		network: map[string]any{"subnet": "10.0.1.0/24"},
+	})
+	if len(decs) != 0 {
+		t.Errorf("10.0/24: want 0 decisions, got %+v", decs)
+	}
+	// Absent network → subnet=="" filter short-circuits to false.
+	decs = evaluatePolicies([]compiledPolicy{cp}, evalContext{})
+	if len(decs) != 0 {
+		t.Errorf("absent network: want 0 decisions, got %+v", decs)
+	}
+}
+
+// TestSynthesiseContext_DistributesAndOmits asserts the shim's fake-data
+// generator both produces non-nil context most of the time AND occasionally
+// returns (nil, nil) so the missing-context path is exercised. Statistical
+// not exact — 200 draws give enough headroom that 0 nils OR 200 nils would
+// both be a real bug rather than a flake.
+func TestSynthesiseContext_DistributesAndOmits(t *testing.T) {
+	rng := newDeterministicRNG()
+	nilCount, presentCount := 0, 0
+	for i := 0; i < 200; i++ {
+		wl, nw := synthesiseContext(rng)
+		if wl == nil && nw == nil {
+			nilCount++
+		} else if wl != nil && nw != nil {
+			presentCount++
+		}
+	}
+	if nilCount == 0 {
+		t.Errorf("synthesiseContext never returned nil — missing-context path not exercised")
+	}
+	if presentCount == 0 {
+		t.Errorf("synthesiseContext never returned non-nil — UC6/UC7 templates would never match")
 	}
 }
 

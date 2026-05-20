@@ -174,6 +174,11 @@ func (s *Server) Router() http.Handler {
 			r.Get("/chat/sessions/{sid}", s.handleGetChatSession)
 			r.Delete("/chat/sessions/{sid}", s.handleDeleteChatSession)
 			r.Post("/chat/sessions/{sid}/messages", s.handlePostChatMessage)
+
+			// UC5 — pre/post-mortem policy simulator (org-level, no policy id).
+			// Placed after /policies/{id}/simulate so chi resolves the static
+			// "simulate" suffix without an id present to this route.
+			r.Post("/policies/simulate", s.handleOrgSimulatePolicy)
 		})
 
 		// Invitee-facing routes. These are NOT under orgMember because the

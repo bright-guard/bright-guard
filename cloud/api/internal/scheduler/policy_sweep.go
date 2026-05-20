@@ -155,6 +155,8 @@ func (s *PolicySweeper) sweepOrg(ctx context.Context, orgID uuid.UUID) error {
 			Caller:     inv.Caller,
 			Server:     inv.Server,
 			Capability: inv.Capability,
+			Workload:   inv.Workload,
+			Network:    inv.Network,
 		}
 		for _, c := range progs {
 			matched, err := c.program.Evaluate(ctx, ic)
@@ -220,6 +222,8 @@ func (s *PolicySweeper) BackfillPolicy(ctx context.Context, p models.Policy, win
 			Caller:     inv.Caller,
 			Server:     inv.Server,
 			Capability: inv.Capability,
+			Workload:   inv.Workload,
+			Network:    inv.Network,
 		}
 		matched, err := prg.Evaluate(ctx, ic)
 		if err != nil || !matched {

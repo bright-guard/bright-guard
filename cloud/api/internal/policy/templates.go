@@ -40,5 +40,21 @@ func Templates() []Template {
 			Action:      "deny",
 			UseCase:     "UC9",
 		},
+		{
+			ID:          "block-prod-to-public",
+			Name:        "Block prod workloads to public servers",
+			Description: "Deny invocations from workloads in the prod cluster targeting a publicly-exposed MCP endpoint. Composes UC6 (workload-aware policy) with UC8 (exposure-state governance): production must not reach outside-the-perimeter capabilities.",
+			Expression:  `workload.cluster == "prod" && server.exposure_state == "public"`,
+			Action:      "deny",
+			UseCase:     "UC6+UC8",
+		},
+		{
+			ID:          "block-outside-corp-net",
+			Name:        "Block traffic from outside the corporate network",
+			Description: "Deny invocations whose source subnet sits outside the internal 10.0.0.0/8 range. Backs vision UC7: network position is a first-class policy dimension — calls from unknown subnets are denied with an audit trail.",
+			Expression:  `network.subnet != "" && !network.subnet.startsWith("10.")`,
+			Action:      "deny",
+			UseCase:     "UC7",
+		},
 	}
 }

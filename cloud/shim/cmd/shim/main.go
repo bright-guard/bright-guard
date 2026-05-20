@@ -71,6 +71,30 @@ type obsInvocation struct {
 	LatencyMs      int            `json:"latencyMs"`
 	At             time.Time      `json:"at"`
 	Decisions      []obsDecision  `json:"decisions,omitempty"`
+	// Wave N+9 (UC6/UC7) optional per-invocation subject + network context.
+	// omitempty so older control planes that don't know the keys still parse
+	// the payload, and so the ~20% of invocations the shim leaves blank do
+	// not push uninformative empty objects over the wire.
+	Workload *obsWorkload `json:"workload,omitempty"`
+	Network  *obsNetwork  `json:"network,omitempty"`
+}
+
+// obsWorkload mirrors cloud/api observationWorkload — the per-invocation
+// subject context the gateway / shim reports for UC6.
+type obsWorkload struct {
+	Host       string `json:"host,omitempty"`
+	Cluster    string `json:"cluster,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	AgentClass string `json:"agentClass,omitempty"`
+}
+
+// obsNetwork mirrors cloud/api observationNetwork — per-invocation network
+// position for UC7.
+type obsNetwork struct {
+	Subnet   string `json:"subnet,omitempty"`
+	VPC      string `json:"vpc,omitempty"`
+	Zone     string `json:"zone,omitempty"`
+	CallerIP string `json:"callerIp,omitempty"`
 }
 
 type obsDecision struct {
@@ -229,6 +253,13 @@ func emit(controlPlane, credential string, cfg *shimConfig, policies *policyCach
 			status = "denied"
 		}
 
+		// Synthesise workload + network context for ~80% of invocations so
+		// the UC6/UC7 templates have realistic data to match against. The
+		// remaining ~20% have neither context attached, exercising the
+		// "missing values fall back to empty strings" path on both the
+		// control-plane eval and the shim's local eval.
+		wl, nw := synthesiseContext(rng)
+
 		// Build the eval context: enrich `server` from the bundle's per-server
 		// snapshot (exposure_state, id) and `caller` from the bundle's per-
 		// caller snapshot (signature, flagged_new, acknowledged). The caller's
@@ -245,6 +276,8 @@ func emit(controlPlane, credential string, cfg *shimConfig, policies *policyCach
 			caller:     evalCaller,
 			server:     evalServer,
 			capability: map[string]string{"kind": c.Kind, "name": c.Name, "description": c.Description},
+			workload:   workloadEvalMap(wl),
+			network:    networkEvalMap(nw),
 			at:         time.Now().UTC(),
 			status:     status,
 		})
@@ -263,6 +296,8 @@ func emit(controlPlane, credential string, cfg *shimConfig, policies *policyCach
 			LatencyMs:      10 + rng.Intn(450),
 			At:             time.Now().UTC(),
 			Decisions:      decisions,
+			Workload:       wl,
+			Network:        nw,
 		})
 	}
 
@@ -575,4 +610,93 @@ func (c *policyCache) apply(b *policyBundleWire) {
 	c.mu.Unlock()
 	log.Printf("policy bundle v%d applied: %d programs, %d servers, %d callers",
 		b.Version, len(progs), len(servers), len(callers))
+}
+
+// fakeClusters / fakeNamespaces / fakeAgentClasses / fakeSubnets / fakeVPCs /
+// fakeZones are the round-robin pools the shim draws synthetic UC6/UC7
+// context from. Chosen so the two shipped templates (block-prod-to-public,
+// block-outside-corp-net) have realistic match + non-match populations.
+var (
+	fakeClusters     = []string{"prod-us-east", "prod-us-west", "staging", "dev"}
+	fakeNamespaces   = []string{"default", "data", "ml-platform"}
+	fakeAgentClasses = []string{"assistant", "copilot", "agent-runtime"}
+	fakeSubnets      = []string{"10.0.1.0/24", "10.0.2.0/24", "172.16.0.0/16", "192.168.1.0/24"}
+	fakeVPCs         = []string{"vpc-prod", "vpc-staging", "vpc-dev"}
+	fakeZones        = []string{"us-east-1a", "us-east-1b", "us-west-2a"}
+)
+
+// synthesiseContext returns a workload + network pair, or (nil, nil) for
+// roughly 20% of calls. The bucket choice is independent so we also generate
+// "workload-only" / "network-only" invocations occasionally — useful to
+// confirm the templates handle partial context correctly.
+//
+// "Cluster derivation" is intentional: the cluster name is the load-bearing
+// field for the prod-to-public template, so we sample it once and key the
+// rest of the workload off it for plausible mock data.
+func synthesiseContext(rng *rand.Rand) (*obsWorkload, *obsNetwork) {
+	// 20% of invocations have no context at all (mimics older / observability-
+	// only agents that don't report subject + network metadata yet).
+	if rng.Intn(5) == 0 {
+		return nil, nil
+	}
+	cluster := fakeClusters[rng.Intn(len(fakeClusters))]
+	ns := fakeNamespaces[rng.Intn(len(fakeNamespaces))]
+	ac := fakeAgentClasses[rng.Intn(len(fakeAgentClasses))]
+	host := cluster + "-pod-" + strconv.Itoa(rng.Intn(20))
+
+	subnet := fakeSubnets[rng.Intn(len(fakeSubnets))]
+	vpc := fakeVPCs[rng.Intn(len(fakeVPCs))]
+	zone := fakeZones[rng.Intn(len(fakeZones))]
+	ip := callerIPInSubnet(subnet, rng)
+
+	wl := &obsWorkload{Host: host, Cluster: cluster, Namespace: ns, AgentClass: ac}
+	nw := &obsNetwork{Subnet: subnet, VPC: vpc, Zone: zone, CallerIP: ip}
+	return wl, nw
+}
+
+// callerIPInSubnet returns an IPv4 string from inside the given CIDR. Only the
+// /24 and /16 shapes used in fakeSubnets are recognised — anything else just
+// returns "10.0.0.1". Demo-grade: we're not trying to honor real CIDR maths,
+// just to put a plausible address into the payload.
+func callerIPInSubnet(cidr string, rng *rand.Rand) string {
+	switch cidr {
+	case "10.0.1.0/24":
+		return "10.0.1." + strconv.Itoa(1+rng.Intn(250))
+	case "10.0.2.0/24":
+		return "10.0.2." + strconv.Itoa(1+rng.Intn(250))
+	case "172.16.0.0/16":
+		return "172.16." + strconv.Itoa(rng.Intn(254)) + "." + strconv.Itoa(1+rng.Intn(250))
+	case "192.168.1.0/24":
+		return "192.168.1." + strconv.Itoa(1+rng.Intn(250))
+	default:
+		return "10.0.0.1"
+	}
+}
+
+// workloadEvalMap / networkEvalMap lift the wire-shape obsWorkload / obsNetwork
+// into the map[string]any shape the eval context expects. Empty / nil inputs
+// produce a fully-empty map (the env normaliser fills the four expected keys
+// with "").
+func workloadEvalMap(w *obsWorkload) map[string]any {
+	if w == nil {
+		return nil
+	}
+	return map[string]any{
+		"host":        w.Host,
+		"cluster":     w.Cluster,
+		"namespace":   w.Namespace,
+		"agent_class": w.AgentClass,
+	}
+}
+
+func networkEvalMap(n *obsNetwork) map[string]any {
+	if n == nil {
+		return nil
+	}
+	return map[string]any{
+		"subnet":    n.Subnet,
+		"vpc":       n.VPC,
+		"zone":      n.Zone,
+		"caller_ip": n.CallerIP,
+	}
 }

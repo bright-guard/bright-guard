@@ -2,10 +2,24 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Policy, PolicyAction, PolicyTemplate } from "../api/types";
+import type {
+  Policy,
+  PolicyAction,
+  PolicySimulationRange,
+  PolicySimulationResp,
+  PolicyTemplate,
+} from "../api/types";
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
 import HelpTooltip from "../components/HelpTooltip";
+import SimulationResultPanel from "../components/simulation/SimulationResultPanel";
+import SimulationRangeSelector from "../components/simulation/SimulationRangeSelector";
+
+const RANGE_LABEL: Record<PolicySimulationRange, string> = {
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+};
 
 const ACTION_CHIP: Record<PolicyAction, string> = {
   deny: "bg-rose-950/60 text-rose-300 border-rose-700/60",
@@ -304,6 +318,12 @@ function NewPolicyModal({
   const [enabled, setEnabled] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Pre-mortem simulator state. Tab "author" is the original form; tab
+  // "simulate" runs the engine against recent traffic and shows the impact.
+  const [tab, setTab] = useState<"author" | "simulate">("author");
+  const [simRange, setSimRange] = useState<PolicySimulationRange>("30d");
+  const [simResult, setSimResult] = useState<PolicySimulationResp | null>(null);
+  const [simulating, setSimulating] = useState(false);
 
   async function submit() {
     setSubmitting(true);
@@ -321,71 +341,166 @@ function NewPolicyModal({
     }
   }
 
+  async function runSimulation() {
+    setSimulating(true);
+    setError(null);
+    try {
+      const result = await api<PolicySimulationResp>(
+        `/api/orgs/${orgId}/policies/simulate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ expression, action, range: simRange }),
+        },
+      );
+      setSimResult(result);
+    } catch (err) {
+      setError(extractError(err));
+    } finally {
+      setSimulating(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
         <h2 className="text-lg font-semibold">New policy</h2>
         <p className="mt-1 text-sm text-slate-500">
-          CEL expression evaluated against observed invocations. Returns bool. Available
-          variables: <code className="font-mono">caller</code>, <code className="font-mono">server</code>,
-          <code className="font-mono"> capability</code>, <code className="font-mono">at</code>, <code className="font-mono">status</code>.
+          CEL expression evaluated against observed invocations. Returns bool.
         </p>
+        <CELVariablesHint />
 
-        <div className="mt-4 space-y-4">
-          <label className="block text-sm">
-            <span className="text-slate-700">Name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="block create_issue on github-mcp"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
-            />
-          </label>
-
-          <label className="block text-sm">
-            <span className="text-slate-700">Description</span>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block text-sm">
-              <span className="text-slate-700">Action</span>
-              <select
-                value={action}
-                onChange={(e) => setAction(e.target.value as PolicyAction)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
+        {/* Tab strip — author vs simulate. Stays mounted to preserve form
+            state when the operator flips between Author and Simulate. */}
+        <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          {(["author", "simulate"] as const).map((t) => {
+            const active = t === tab;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                aria-pressed={active}
+                className={
+                  "px-3 py-1 text-xs font-medium transition-colors " +
+                  (active
+                    ? "rounded-md bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900")
+                }
               >
-                <option value="deny">Deny (audit)</option>
-                <option value="warn">Warn (audit)</option>
-              </select>
+                {t === "author" ? "Author" : "Simulate"}
+              </button>
+            );
+          })}
+        </div>
+
+        {tab === "author" && (
+          <div className="mt-4 space-y-4">
+            <label className="block text-sm">
+              <span className="text-slate-700">Name</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="block create_issue on github-mcp"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
+              />
             </label>
-            <label className="mt-6 flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-              Enabled
+
+            <label className="block text-sm">
+              <span className="text-slate-700">Description</span>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block text-sm">
+                <span className="text-slate-700">Action</span>
+                <select
+                  value={action}
+                  onChange={(e) => setAction(e.target.value as PolicyAction)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-[var(--accent)] focus:outline-none"
+                >
+                  <option value="deny">Deny (audit)</option>
+                  <option value="warn">Warn (audit)</option>
+                </select>
+              </label>
+              <label className="mt-6 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+                Enabled
+              </label>
+            </div>
+
+            <label className="block text-sm">
+              <span className="text-slate-700">Expression</span>
+              <textarea
+                value={expression}
+                onChange={(e) => setExpression(e.target.value)}
+                rows={5}
+                spellCheck={false}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-[var(--accent)] focus:outline-none"
+              />
             </label>
           </div>
+        )}
 
-          <label className="block text-sm">
-            <span className="text-slate-700">Expression</span>
-            <textarea
-              value={expression}
-              onChange={(e) => setExpression(e.target.value)}
-              rows={5}
-              spellCheck={false}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-[var(--accent)] focus:outline-none"
-            />
-          </label>
+        {tab === "simulate" && (
+          <div className="mt-4 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Dry-run this expression against the org's recent observed traffic. No policy is
+                created or persisted.
+              </p>
+              <SimulationRangeSelector
+                value={simRange}
+                onChange={(r) => {
+                  setSimRange(r);
+                  setSimResult(null);
+                }}
+                disabled={simulating}
+              />
+            </div>
 
-          {error && (
-            <pre className="whitespace-pre-wrap rounded-md border border-rose-300 bg-rose-50 p-3 font-mono text-xs text-rose-800">
-              {error}
-            </pre>
-          )}
-        </div>
+            <label className="block text-sm">
+              <span className="text-slate-700">Expression</span>
+              <textarea
+                value={expression}
+                onChange={(e) => {
+                  setExpression(e.target.value);
+                  setSimResult(null);
+                }}
+                rows={4}
+                spellCheck={false}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-[var(--accent)] focus:outline-none"
+              />
+            </label>
+
+            <div className="flex justify-start">
+              <button
+                onClick={runSimulation}
+                disabled={simulating || !expression.trim()}
+                className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {simulating ? "Running…" : "Run simulation"}
+              </button>
+            </div>
+
+            {simResult && (
+              <SimulationResultPanel
+                result={simResult}
+                mode="pre"
+                rangeLabel={RANGE_LABEL[simRange]}
+              />
+            )}
+          </div>
+        )}
+
+        {error && (
+          <pre className="mt-4 whitespace-pre-wrap rounded-md border border-rose-300 bg-rose-50 p-3 font-mono text-xs text-rose-800">
+            {error}
+          </pre>
+        )}
 
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -400,10 +515,47 @@ function NewPolicyModal({
             disabled={submitting || !name.trim() || !expression.trim()}
             className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? "Saving…" : "Create policy"}
+            {submitting ? "Saving…" : tab === "simulate" && simResult ? "Looks good — save policy" : "Create policy"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// CELVariablesHint renders the per-scope variable reference shown next to the
+// CEL editor on the new-policy and policy-detail pages. Exported as a named
+// export so PolicyDetailPage can pull the same shape without duplicating the
+// markup. Kept in this file because it's authored once, surfaced twice; a
+// dedicated component file would be over-organised for ~30 lines of JSX.
+export function CELVariablesHint() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left text-slate-700"
+      >
+        <span className="font-semibold">Available variables</span>
+        <span className="text-slate-400">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <ul className="space-y-1 border-t border-slate-200 px-3 py-2 font-mono text-[11px] text-slate-700">
+          <li>server.&#123;id, name, address, exposure_state, transport&#125;</li>
+          <li>caller.&#123;signature, label, flagged_new, acknowledged&#125;</li>
+          <li>capability.&#123;kind, name, description&#125;</li>
+          <li>
+            workload.&#123;host, cluster, namespace, agent_class&#125;{" "}
+            <span className="text-emerald-600">NEW</span>
+          </li>
+          <li>
+            network.&#123;subnet, vpc, zone, caller_ip&#125;{" "}
+            <span className="text-emerald-600">NEW</span>
+          </li>
+          <li>request.now (timestamp)</li>
+        </ul>
+      )}
     </div>
   );
 }

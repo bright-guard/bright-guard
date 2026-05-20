@@ -45,6 +45,15 @@ type Engine struct {
 //   - `request` is a new map<string, dyn> carrying request.now (UTC time of
 //     evaluation). `at` is kept as-is for backwards compatibility.
 //
+// Wave N+9 added two more scopes for UC6 (asset/user-level policy) and UC7
+// (network-aware enforcement):
+//   - `workload` map<string, dyn>: host, cluster, namespace, agent_class.
+//   - `network`  map<string, dyn>: subnet, vpc, zone, caller_ip.
+// Both populated from the per-invocation context the shim sends. Missing
+// fields collapse to empty strings, never null, so a policy like
+// `workload.cluster == "prod"` evaluates without raising "no such key" on
+// older invocations.
+//
 // This env declaration MUST stay byte-for-byte identical to
 // cloud/shim/cmd/shim/policy.go's sharedCELEnv().
 func New() (*Engine, error) {
@@ -53,6 +62,8 @@ func New() (*Engine, error) {
 		cel.Variable("server", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType)),
 		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("workload", cel.MapType(cel.StringType, cel.DynType)),
+		cel.Variable("network", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("at", cel.TimestampType),
 		cel.Variable("status", cel.StringType),
 	)
@@ -95,12 +106,19 @@ func (e *Engine) Compile(expr string) (*PolicyProgram, error) {
 // for CEL so a future bool/numeric field doesn't break older policies. Caller
 // is shipped as raw JSON (the same shape the shim sees) and decoded inline so
 // each call gets a clean copy.
+//
+// Workload + Network (Wave N+9) carry the per-invocation subject/network
+// context (UC6/UC7). Both are optional — nil/empty maps are normalised to
+// empty-string scopes so the CEL env still resolves workload.* / network.*
+// reads without erroring on missing keys.
 type InvocationContext struct {
 	At         time.Time
 	Status     string
 	Caller     json.RawMessage
 	Server     map[string]string
 	Capability map[string]string
+	Workload   map[string]string
+	Network    map[string]string
 }
 
 // Evaluate runs the compiled program with the given context. Returns the
@@ -129,6 +147,11 @@ func (p *PolicyProgram) Evaluate(ctx context.Context, ic InvocationContext) (boo
 	for k, v := range ic.Server {
 		srv[k] = v
 	}
+	// Wave N+9 workload + network scopes. Pre-fill the documented keys with
+	// "" so a policy like `network.subnet == "10.0.0.0/24"` never errors on
+	// rows that lack any network context — empty-string compares cleanly.
+	workload := buildScope(ic.Workload, workloadKeys)
+	network := buildScope(ic.Network, networkKeys)
 	now := ic.At
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -138,6 +161,8 @@ func (p *PolicyProgram) Evaluate(ctx context.Context, ic InvocationContext) (boo
 		"server":     srv,
 		"capability": ic.Capability,
 		"request":    map[string]any{"now": now},
+		"workload":   workload,
+		"network":    network,
 		"at":         ic.At,
 		"status":     ic.Status,
 	})
@@ -152,4 +177,23 @@ func (p *PolicyProgram) Evaluate(ctx context.Context, ic InvocationContext) (boo
 		return false, nil
 	}
 	return false, nil
+}
+
+// workloadKeys and networkKeys list the documented sub-fields for their
+// respective scopes. The eval path pre-fills each with "" when absent so a
+// policy that references e.g. workload.cluster on a pre-N+9 invocation
+// resolves to "" instead of erroring on missing-key.
+var workloadKeys = []string{"host", "cluster", "namespace", "agent_class"}
+var networkKeys = []string{"subnet", "vpc", "zone", "caller_ip"}
+
+func buildScope(src map[string]string, keys []string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, k := range keys {
+		if v, ok := src[k]; ok {
+			out[k] = v
+		} else {
+			out[k] = ""
+		}
+	}
+	return out
 }

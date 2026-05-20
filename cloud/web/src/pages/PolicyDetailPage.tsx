@@ -7,9 +7,21 @@ import type {
   Policy,
   PolicyAction,
   PolicySimulateResp,
+  PolicySimulationRange,
+  PolicySimulationResp,
 } from "../api/types";
 import { relativeTime } from "../lib/time";
 import PageHelp from "../components/PageHelp";
+import { CELVariablesHint } from "./PoliciesPage";
+import SimulationResultPanel from "../components/simulation/SimulationResultPanel";
+import SimulationRangeSelector from "../components/simulation/SimulationRangeSelector";
+import ComparisonDiff from "../components/simulation/ComparisonDiff";
+
+const POST_MORTEM_RANGE_LABEL: Record<PolicySimulationRange, string> = {
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+};
 
 const ACTION_CHIP: Record<PolicyAction, string> = {
   deny: "bg-rose-100 text-rose-700 border-rose-300",
@@ -19,8 +31,16 @@ const ACTION_CHIP: Record<PolicyAction, string> = {
 // enforcementUseCase inspects the CEL source for the variable references that
 // the shim turns into real denials at the gateway (vs the audit-only sweep).
 // Returns the matched vision use case, or null when the policy is audit-only.
+// Composite cases (workload+exposure, network position) are recognised first
+// so a prod-to-public policy renders as "UC6+UC8" rather than just "UC8".
 function enforcementUseCase(expression: string): string | null {
-  if (/server\.exposure_state/.test(expression)) return "UC8";
+  const hasExposure = /server\.exposure_state/.test(expression);
+  const hasWorkload = /workload\./.test(expression);
+  const hasNetwork = /network\./.test(expression);
+  if (hasWorkload && hasExposure) return "UC6+UC8";
+  if (hasWorkload) return "UC6";
+  if (hasNetwork) return "UC7";
+  if (hasExposure) return "UC8";
   if (/caller\.flagged_new|caller\.acknowledged/.test(expression)) return "UC9";
   return null;
 }
@@ -166,6 +186,7 @@ export default function PolicyDetailPage() {
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
           />
         </label>
+        <CELVariablesHint />
         <div className="flex items-center gap-4">
           <label className="text-sm">
             <span className="mr-2 text-slate-700">Action</span>
@@ -225,6 +246,12 @@ export default function PolicyDetailPage() {
         </section>
       )}
 
+      <PostMortemPanel
+        orgId={activeOrgId ?? ""}
+        currentExpression={policy.expression}
+        currentAction={policy.action}
+      />
+
       <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Recent matches ({recentMatches.length})
@@ -257,4 +284,188 @@ function extractError(err: unknown): string {
     }
   }
   return String(err);
+}
+
+// PostMortemPanel is the UC5 collapsible "Simulate" section under a policy's
+// definition. Two sub-modes: "current" replays this policy over a window;
+// "compare" runs an alternate expression against the same window and renders
+// the delta. Uses the org-level simulator (not the per-id endpoint above) so
+// it can drive comparison mode in one round-trip.
+function PostMortemPanel({
+  orgId,
+  currentExpression,
+  currentAction,
+}: {
+  orgId: string;
+  currentExpression: string;
+  currentAction: PolicyAction;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"current" | "compare">("current");
+  const [range, setRange] = useState<PolicySimulationRange>("30d");
+  const [altExpr, setAltExpr] = useState(currentExpression);
+  const [altAction, setAltAction] = useState<PolicyAction>(currentAction);
+  const [result, setResult] = useState<PolicySimulationResp | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    if (!orgId) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = {
+        expression: currentExpression,
+        action: currentAction,
+        range,
+      };
+      if (mode === "compare") {
+        body.comparison = { expression: altExpr, action: altAction };
+      }
+      const r = await api<PolicySimulationResp>(
+        `/api/orgs/${orgId}/policies/simulate`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      );
+      setResult(r);
+    } catch (err) {
+      setError(extractError(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-3 text-left"
+      >
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Simulate (UC5)
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Replay this policy or compare it against an alternate expression over recent traffic.
+          </p>
+        </div>
+        <span className="text-xs text-slate-400">{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-4 border-t border-slate-200 px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {(["current", "compare"] as const).map((m) => {
+                const active = m === mode;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setMode(m);
+                      setResult(null);
+                    }}
+                    aria-pressed={active}
+                    className={
+                      "px-3 py-1 text-xs font-medium transition-colors " +
+                      (active
+                        ? "rounded-md bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900")
+                    }
+                  >
+                    {m === "current" ? "What is this blocking?" : "What if I changed it?"}
+                  </button>
+                );
+              })}
+            </div>
+            <SimulationRangeSelector
+              value={range}
+              onChange={(r) => {
+                setRange(r);
+                setResult(null);
+              }}
+              disabled={running}
+            />
+          </div>
+
+          {mode === "compare" && (
+            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/40 p-3">
+              <label className="block text-sm">
+                <span className="text-slate-700">Alternate expression</span>
+                <textarea
+                  value={altExpr}
+                  onChange={(e) => {
+                    setAltExpr(e.target.value);
+                    setResult(null);
+                  }}
+                  rows={4}
+                  spellCheck={false}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:border-[var(--accent)] focus:outline-none"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mr-2 text-slate-700">Alternate action</span>
+                <select
+                  value={altAction}
+                  onChange={(e) => {
+                    setAltAction(e.target.value as PolicyAction);
+                    setResult(null);
+                  }}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                >
+                  <option value="deny">Deny</option>
+                  <option value="warn">Warn</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          <div>
+            <button
+              onClick={run}
+              disabled={running || !orgId}
+              className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {running ? "Running…" : "Run simulation"}
+            </button>
+          </div>
+
+          {error && (
+            <pre className="whitespace-pre-wrap rounded-md border border-rose-300 bg-rose-50 p-3 font-mono text-xs text-rose-800">
+              {error}
+            </pre>
+          )}
+
+          {result && (
+            <>
+              <SimulationResultPanel
+                result={result}
+                mode="post"
+                rangeLabel={POST_MORTEM_RANGE_LABEL[range]}
+              />
+              {mode === "compare" && result.comparison && (
+                <>
+                  <ComparisonDiff current={result} proposed={result.comparison} />
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Proposed expression result
+                    </h3>
+                    <SimulationResultPanel
+                      result={result.comparison}
+                      mode="post"
+                      rangeLabel={POST_MORTEM_RANGE_LABEL[range]}
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }

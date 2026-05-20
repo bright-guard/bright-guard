@@ -326,6 +326,11 @@ func (p *Policies) SetSweepWatermark(ctx context.Context, orgID uuid.UUID, at ti
 // InvocationContext is the snapshot the sweep + simulate paths feed to the CEL
 // engine. Kept as a generic any-map so the engine package can stay
 // store-independent.
+//
+// Workload / Network (Wave N+9) carry the per-invocation context the gateway
+// reported (UC6/UC7). Either may be empty for older rows; the policy engine
+// pre-fills missing keys with "" so policies that reference them never
+// error.
 type InvocationContext struct {
 	ID         uuid.UUID
 	OrgID      uuid.UUID
@@ -334,6 +339,8 @@ type InvocationContext struct {
 	Caller     json.RawMessage
 	Server     map[string]string
 	Capability map[string]string
+	Workload   map[string]string
+	Network    map[string]string
 }
 
 // ListInvocationsForSweep loads invocations strictly newer than the watermark,
@@ -354,7 +361,11 @@ func (p *Policies) ListInvocationsForSweep(
 		       coalesce(c.description, ''),
 		       coalesce(oc.signature, ''), coalesce(oc.label, ''),
 		       coalesce(oc.flagged_new, false),
-		       (oc.acknowledged_at is not null)
+		       (oc.acknowledged_at is not null),
+		       coalesce(i.workload_host, ''), coalesce(i.workload_cluster, ''),
+		       coalesce(i.workload_namespace, ''), coalesce(i.agent_class, ''),
+		       coalesce(i.network_subnet, ''), coalesce(i.network_vpc, ''),
+		       coalesce(i.network_zone, ''), coalesce(i.caller_ip, '')
 		from mcp_invocations i
 		join mcp_servers s on s.id = i.mcp_server_id
 		left join mcp_capabilities c on c.id = i.capability_id
@@ -375,16 +386,22 @@ func (p *Policies) ListInvocationsForSweep(
 		ic := InvocationContext{
 			Server:     map[string]string{},
 			Capability: map[string]string{},
+			Workload:   map[string]string{},
+			Network:    map[string]string{},
 		}
 		var sID, sName, sTrans, sAddr, sExp string
 		var capKind, capName, capDesc string
 		var cSig, cLabel string
 		var cFlagged, cAck bool
+		var wHost, wCluster, wNamespace, wAgentClass string
+		var nSubnet, nVPC, nZone, nCallerIP string
 		if err := rows.Scan(
 			&ic.ID, &ic.OrgID, &ic.At, &ic.Status, &ic.Caller,
 			&sID, &sName, &sTrans, &sAddr, &sExp,
 			&capKind, &capName, &capDesc,
 			&cSig, &cLabel, &cFlagged, &cAck,
+			&wHost, &wCluster, &wNamespace, &wAgentClass,
+			&nSubnet, &nVPC, &nZone, &nCallerIP,
 		); err != nil {
 			return nil, err
 		}
@@ -397,6 +414,14 @@ func (p *Policies) ListInvocationsForSweep(
 		ic.Capability["kind"] = capKind
 		ic.Capability["name"] = capName
 		ic.Capability["description"] = capDesc
+		ic.Workload["host"] = wHost
+		ic.Workload["cluster"] = wCluster
+		ic.Workload["namespace"] = wNamespace
+		ic.Workload["agent_class"] = wAgentClass
+		ic.Network["subnet"] = nSubnet
+		ic.Network["vpc"] = nVPC
+		ic.Network["zone"] = nZone
+		ic.Network["caller_ip"] = nCallerIP
 		// Enrich the caller JSON with signature/label/flagged_new/acknowledged
 		// so the CEL env exposes them as first-class fields. Done in-place on
 		// a decoded copy so the original raw JSON survives for sites that
@@ -420,7 +445,11 @@ func (p *Policies) ListInvocationsInWindow(
 		       coalesce(c.description, ''),
 		       coalesce(oc.signature, ''), coalesce(oc.label, ''),
 		       coalesce(oc.flagged_new, false),
-		       (oc.acknowledged_at is not null)
+		       (oc.acknowledged_at is not null),
+		       coalesce(i.workload_host, ''), coalesce(i.workload_cluster, ''),
+		       coalesce(i.workload_namespace, ''), coalesce(i.agent_class, ''),
+		       coalesce(i.network_subnet, ''), coalesce(i.network_vpc, ''),
+		       coalesce(i.network_zone, ''), coalesce(i.caller_ip, '')
 		from mcp_invocations i
 		join mcp_servers s on s.id = i.mcp_server_id
 		left join mcp_capabilities c on c.id = i.capability_id
@@ -438,16 +467,22 @@ func (p *Policies) ListInvocationsInWindow(
 		ic := InvocationContext{
 			Server:     map[string]string{},
 			Capability: map[string]string{},
+			Workload:   map[string]string{},
+			Network:    map[string]string{},
 		}
 		var sID, sName, sTrans, sAddr, sExp string
 		var capKind, capName, capDesc string
 		var cSig, cLabel string
 		var cFlagged, cAck bool
+		var wHost, wCluster, wNamespace, wAgentClass string
+		var nSubnet, nVPC, nZone, nCallerIP string
 		if err := rows.Scan(
 			&ic.ID, &ic.OrgID, &ic.At, &ic.Status, &ic.Caller,
 			&sID, &sName, &sTrans, &sAddr, &sExp,
 			&capKind, &capName, &capDesc,
 			&cSig, &cLabel, &cFlagged, &cAck,
+			&wHost, &wCluster, &wNamespace, &wAgentClass,
+			&nSubnet, &nVPC, &nZone, &nCallerIP,
 		); err != nil {
 			return nil, err
 		}
@@ -460,6 +495,14 @@ func (p *Policies) ListInvocationsInWindow(
 		ic.Capability["kind"] = capKind
 		ic.Capability["name"] = capName
 		ic.Capability["description"] = capDesc
+		ic.Workload["host"] = wHost
+		ic.Workload["cluster"] = wCluster
+		ic.Workload["namespace"] = wNamespace
+		ic.Workload["agent_class"] = wAgentClass
+		ic.Network["subnet"] = nSubnet
+		ic.Network["vpc"] = nVPC
+		ic.Network["zone"] = nZone
+		ic.Network["caller_ip"] = nCallerIP
 		ic.Caller = enrichCallerForCEL(ic.Caller, cSig, cLabel, cFlagged, cAck)
 		out = append(out, ic)
 	}

@@ -616,3 +616,49 @@ export type ChatCreateSessionResp = {
 export type ChatSessionListResp = {
   items: ChatSessionRef[];
 };
+
+// --- UC5 — Policy simulation (pre/post-mortem) ---
+
+export type PolicySimulationRange = "7d" | "30d" | "90d";
+
+export type PolicySimulationSample = {
+  invocationId: string;
+  capability: string;
+  server: string;
+  caller: string;
+  timestamp: string;
+};
+
+export type PolicySimulationBucket = {
+  name: string;
+  count: number;
+};
+
+export type PolicySimulationResult = {
+  totalInvocations: number;
+  wouldBlockCount: number;
+  wouldWarnCount: number;
+  breakdownByServer: PolicySimulationBucket[];
+  breakdownByCapability: PolicySimulationBucket[];
+  breakdownByCaller: PolicySimulationBucket[];
+  samples: PolicySimulationSample[];
+  truncated: boolean;
+  durationMs: number;
+};
+
+export type PolicySimulationExprReq = {
+  expression: string;
+  action: PolicyAction;
+};
+
+export type PolicySimulationReq = PolicySimulationExprReq & {
+  range: PolicySimulationRange;
+  comparison?: PolicySimulationExprReq | null;
+};
+
+// Server response wraps the primary result with a sibling comparison block.
+// The control plane returns these as flat siblings (not nested) so the JSON
+// shape stays {totalInvocations, …, comparison: {totalInvocations, …}}.
+export type PolicySimulationResp = PolicySimulationResult & {
+  comparison: PolicySimulationResult | null;
+};

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -326,6 +327,8 @@ func (s *Server) handleSimulatePolicy(w http.ResponseWriter, r *http.Request) {
 			Caller:     inv.Caller,
 			Server:     inv.Server,
 			Capability: inv.Capability,
+			Workload:   inv.Workload,
+			Network:    inv.Network,
 		}
 		matched, err := prg.Evaluate(r.Context(), ic)
 		if err != nil {
@@ -356,5 +359,184 @@ func isUniqueViolation(err error) bool {
 	}
 	s := err.Error()
 	return strings.Contains(s, "23505") || strings.Contains(s, "duplicate key") || strings.Contains(s, "policies_org_id_name_key")
+}
+
+// --- UC5 — Pre-mortem / post-mortem policy simulator ---
+//
+// Distinct from handleSimulatePolicy above (which is keyed by an existing
+// policy id): this is the org-level "what would this CEL block?" endpoint that
+// drives the "Simulate" tab on the new-policy modal and the "What is this
+// blocking?" panel on PolicyDetailPage. Synchronous; bounded to keep
+// sub-second on the largest current orgs.
+
+type orgSimulateExprReq struct {
+	Expression string `json:"expression"`
+	Action     string `json:"action"`
+}
+
+type orgSimulateReq struct {
+	Expression string              `json:"expression"`
+	Action     string              `json:"action"`
+	Range      string              `json:"range"` // 7d | 30d | 90d
+	Comparison *orgSimulateExprReq `json:"comparison"`
+}
+
+type orgSimulateResp struct {
+	*policy.SimulationResult
+	Comparison *policy.SimulationResult `json:"comparison"`
+}
+
+func parseSimulationRange(s string) (time.Duration, bool) {
+	switch s {
+	case "", "30d":
+		return 30 * 24 * time.Hour, true
+	case "7d":
+		return 7 * 24 * time.Hour, true
+	case "90d":
+		return 90 * 24 * time.Hour, true
+	}
+	return 0, false
+}
+
+// handleOrgSimulatePolicy is the new UC5 entry point. Loads the org's recent
+// invocations once and evaluates both the primary expression and (optionally)
+// a comparison expression against the same set so the diff is apples-to-apples.
+func (s *Server) handleOrgSimulatePolicy(w http.ResponseWriter, r *http.Request) {
+	orgID := orgFromCtx(r.Context())
+	var req orgSimulateReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "bad json")
+		return
+	}
+	expr := strings.TrimSpace(req.Expression)
+	if expr == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "expression is required")
+		return
+	}
+	action, ok := validPolicyAction(req.Action)
+	if !ok {
+		// Default to deny when omitted so the most common pre-mortem case is
+		// a one-field POST.
+		if req.Action == "" {
+			action = models.PolicyActionDeny
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_request", "invalid action")
+			return
+		}
+	}
+	window, ok := parseSimulationRange(req.Range)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid_request", "range must be 7d, 30d, or 90d")
+		return
+	}
+	if s.PolicyEngine == nil {
+		writeError(w, http.StatusServiceUnavailable, "policy_engine_unconfigured", "policy engine not configured")
+		return
+	}
+	primaryPrg, err := s.PolicyEngine.Compile(expr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_expression", err.Error())
+		return
+	}
+	var compPrg *policy.PolicyProgram
+	var compAction policy.SimulationAction
+	if req.Comparison != nil && strings.TrimSpace(req.Comparison.Expression) != "" {
+		cexpr := strings.TrimSpace(req.Comparison.Expression)
+		ca, cok := validPolicyAction(req.Comparison.Action)
+		if !cok {
+			if req.Comparison.Action == "" {
+				ca = models.PolicyActionDeny
+			} else {
+				writeError(w, http.StatusBadRequest, "invalid_request", "invalid comparison action")
+				return
+			}
+		}
+		prg, err := s.PolicyEngine.Compile(cexpr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_comparison_expression", err.Error())
+			return
+		}
+		compPrg = prg
+		compAction = toSimulationAction(ca)
+	}
+
+	since := time.Now().UTC().Add(-window)
+	invs, err := s.Policies.ListInvocationsForSimulation(r.Context(), orgID, since, policy.SimulationMaxRows)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "list invocations failed")
+		return
+	}
+	truncated := len(invs) >= policy.SimulationMaxRows
+	if truncated {
+		log.Printf("policy simulate: org %s range=%s hit %d cap", orgID, req.Range, policy.SimulationMaxRows)
+	}
+	inputs := buildSimulationInputs(invs)
+
+	result := policy.Simulate(r.Context(), primaryPrg, toSimulationAction(action), inputs)
+	result.Truncated = truncated
+	resp := orgSimulateResp{SimulationResult: &result}
+	if compPrg != nil {
+		cmp := policy.Simulate(r.Context(), compPrg, compAction, inputs)
+		cmp.Truncated = truncated
+		resp.Comparison = &cmp
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// buildSimulationInputs lifts the store rows into the engine's input shape.
+// CallerKey collapses caller identity to a single human-friendly token, using
+// the enriched signature/label/agent fields in priority order. Anything else
+// degrades to "(unknown)" upstream in Simulate.
+func buildSimulationInputs(invs []store.InvocationContext) []policy.SimulationInput {
+	out := make([]policy.SimulationInput, 0, len(invs))
+	for _, inv := range invs {
+		serverName := inv.Server["name"]
+		capKind := inv.Capability["kind"]
+		capName := inv.Capability["name"]
+		capKey := capName
+		if capKind != "" && capName != "" {
+			capKey = capKind + "/" + capName
+		}
+		out = append(out, policy.SimulationInput{
+			InvocationID:  inv.ID,
+			At:            inv.At,
+			ServerName:    serverName,
+			CapabilityKey: capKey,
+			CallerKey:     callerKeyFromJSON(inv.Caller),
+			IC: policy.InvocationContext{
+				At:         inv.At,
+				Status:     inv.Status,
+				Caller:     inv.Caller,
+				Server:     inv.Server,
+				Capability: inv.Capability,
+			},
+		})
+	}
+	return out
+}
+
+// callerKeyFromJSON extracts the most-useful identity field from the enriched
+// caller blob. Order: label → signature → agent → user → "(unknown)".
+func callerKeyFromJSON(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	m := map[string]any{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	for _, k := range []string{"label", "signature", "agent", "user"} {
+		if v, ok := m[k].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func toSimulationAction(a models.PolicyAction) policy.SimulationAction {
+	if a == models.PolicyActionWarn {
+		return policy.SimulationActionWarn
+	}
+	return policy.SimulationActionDeny
 }
 

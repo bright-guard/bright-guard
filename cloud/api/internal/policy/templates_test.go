@@ -132,6 +132,116 @@ func TestTemplate_UC9_UnapprovedCaller(t *testing.T) {
 	}
 }
 
+// TestTemplate_UC6UC8_ProdToPublic verifies the composite template denies
+// invocations from a prod workload to a public server, and allows every other
+// combination (non-prod workload, internal exposure, missing context).
+func TestTemplate_UC6UC8_ProdToPublic(t *testing.T) {
+	e, err := New()
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	var tpl Template
+	for _, t := range Templates() {
+		if t.ID == "block-prod-to-public" {
+			tpl = t
+			break
+		}
+	}
+	if tpl.ID == "" {
+		t.Fatal("template block-prod-to-public missing")
+	}
+	if tpl.UseCase != "UC6+UC8" {
+		t.Errorf("expected UseCase=UC6+UC8, got %q", tpl.UseCase)
+	}
+	prg, err := e.Compile(tpl.Expression)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	cases := []struct {
+		name    string
+		cluster string
+		expose  string
+		want    bool
+	}{
+		{"prod + public → deny", "prod", "public", true},
+		{"prod + internal → allow", "prod", "internal", false},
+		{"staging + public → allow", "staging", "public", false},
+		{"missing workload + public → allow", "", "public", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ic := InvocationContext{
+				Server: map[string]string{"name": "s", "exposure_state": tc.expose},
+			}
+			if tc.cluster != "" {
+				ic.Workload = map[string]string{"cluster": tc.cluster}
+			}
+			got, err := prg.Evaluate(context.Background(), ic)
+			if err != nil {
+				t.Fatalf("eval: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTemplate_UC7_OutsideCorpNet verifies the corp-net template fires only
+// when a non-10/8 subnet is present, allows everything that starts with 10.,
+// and treats missing network context as a non-match (no false positives on
+// pre-N+9 invocations).
+func TestTemplate_UC7_OutsideCorpNet(t *testing.T) {
+	e, err := New()
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	var tpl Template
+	for _, t := range Templates() {
+		if t.ID == "block-outside-corp-net" {
+			tpl = t
+			break
+		}
+	}
+	if tpl.ID == "" {
+		t.Fatal("template block-outside-corp-net missing")
+	}
+	if tpl.UseCase != "UC7" {
+		t.Errorf("expected UseCase=UC7, got %q", tpl.UseCase)
+	}
+	prg, err := e.Compile(tpl.Expression)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	cases := []struct {
+		name   string
+		subnet string
+		want   bool
+	}{
+		{"public 172.16/16 → deny", "172.16.0.0/16", true},
+		{"public 192.168/24 → deny", "192.168.1.0/24", true},
+		{"internal 10.0/24 → allow", "10.0.1.0/24", false},
+		{"missing subnet → allow", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ic := InvocationContext{
+				Server: map[string]string{"name": "s"},
+			}
+			if tc.subnet != "" {
+				ic.Network = map[string]string{"subnet": tc.subnet}
+			}
+			got, err := prg.Evaluate(context.Background(), ic)
+			if err != nil {
+				t.Fatalf("eval: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestTemplate_RequestNow confirms request.now is usable from a CEL expression
 // — the env declaration alone is insufficient if eval doesn't bind a value.
 func TestTemplate_RequestNow(t *testing.T) {

@@ -22,6 +22,8 @@ const evalCostLimit uint64 = 50_000
 //	cel.Variable("server",     cel.MapType(cel.StringType, cel.DynType))
 //	cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType))
 //	cel.Variable("request",    cel.MapType(cel.StringType, cel.DynType))
+//	cel.Variable("workload",   cel.MapType(cel.StringType, cel.DynType))
+//	cel.Variable("network",    cel.MapType(cel.StringType, cel.DynType))
 //	cel.Variable("at",         cel.TimestampType)
 //	cel.Variable("status",     cel.StringType)
 //
@@ -29,6 +31,9 @@ const evalCostLimit uint64 = 50_000
 // Wave N+8 widened `server` to dyn and added `request` so the UC8/UC9 policy
 // templates can read server.exposure_state and request.now without the env
 // authoring layer rejecting unknown fields.
+// Wave N+9 added `workload` (UC6: host/cluster/namespace/agent_class) and
+// `network` (UC7: subnet/vpc/zone/caller_ip). Missing values surface as ""
+// so a policy never errors on absent context.
 var (
 	celEnvOnce sync.Once
 	celEnvVal  *cel.Env
@@ -42,6 +47,8 @@ func sharedCELEnv() (*cel.Env, error) {
 			cel.Variable("server", cel.MapType(cel.StringType, cel.DynType)),
 			cel.Variable("capability", cel.MapType(cel.StringType, cel.StringType)),
 			cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
+			cel.Variable("workload", cel.MapType(cel.StringType, cel.DynType)),
+			cel.Variable("network", cel.MapType(cel.StringType, cel.DynType)),
 			cel.Variable("at", cel.TimestampType),
 			cel.Variable("status", cel.StringType),
 		)
@@ -85,10 +92,18 @@ func compilePolicy(p bundlePolicyWire) (compiledPolicy, error) {
 // evalContext is the snapshot fed to each policy program per fake invocation.
 // server is map[string]any (CEL dyn) so we can hold strings (name, address,
 // exposure_state, id) without the env rejecting non-string future values.
+//
+// workload + network (Wave N+9) carry the per-invocation subject and network
+// context — keys are the documented sub-fields (workload.host / .cluster /
+// .namespace / .agent_class and network.subnet / .vpc / .zone / .caller_ip);
+// the emit path pre-fills them with "" when absent so policy programs never
+// error on missing keys.
 type evalContext struct {
 	caller     map[string]any
 	server     map[string]any
 	capability map[string]string
+	workload   map[string]any
+	network    map[string]any
 	at         time.Time
 	status     string
 }
@@ -132,6 +147,8 @@ func evalOne(c compiledPolicy, ec evalContext) (bool, error) {
 	if cap == nil {
 		cap = map[string]string{}
 	}
+	workload := normaliseScope(ec.workload, evalWorkloadKeys)
+	network := normaliseScope(ec.network, evalNetworkKeys)
 	now := ec.at
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -141,6 +158,8 @@ func evalOne(c compiledPolicy, ec evalContext) (bool, error) {
 		"server":     srv,
 		"capability": cap,
 		"request":    map[string]any{"now": now},
+		"workload":   workload,
+		"network":    network,
 		"at":         ec.at,
 		"status":     ec.status,
 	})
@@ -154,4 +173,23 @@ func evalOne(c compiledPolicy, ec evalContext) (bool, error) {
 		return false, nil
 	}
 	return false, nil
+}
+
+// evalWorkloadKeys / evalNetworkKeys are the documented sub-fields for the
+// workload and network scopes. The eval path pre-fills each with "" so a
+// policy like `workload.cluster == "prod"` resolves to "" instead of
+// erroring on rows where the shim didn't synthesise context.
+var evalWorkloadKeys = []string{"host", "cluster", "namespace", "agent_class"}
+var evalNetworkKeys = []string{"subnet", "vpc", "zone", "caller_ip"}
+
+func normaliseScope(src map[string]any, keys []string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, k := range keys {
+		if v, ok := src[k]; ok && v != nil {
+			out[k] = v
+		} else {
+			out[k] = ""
+		}
+	}
+	return out
 }
