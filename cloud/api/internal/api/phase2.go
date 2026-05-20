@@ -299,9 +299,28 @@ func (s *Server) handleGatewayRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// heartbeatResp is the wire-protocol contract for any future real-agentgateway
+// shim: control plane returns the current denylist so the shim can refresh its
+// local policy cache without a separate roundtrip.
+type heartbeatResp struct {
+	DisabledCapabilities []models.DisabledCapabilityRef `json:"disabledCapabilities"`
+}
+
 func (s *Server) handleGatewayHeartbeat(w http.ResponseWriter, r *http.Request) {
-	// The bearer middleware already calls TouchSeen.
-	w.WriteHeader(http.StatusNoContent)
+	gw := gatewayFromCtx(r.Context())
+	if gw == nil {
+		http.Error(w, "missing gateway", http.StatusUnauthorized)
+		return
+	}
+	disabled, err := s.Discovery.ListDisabledCapabilitiesForGateway(r.Context(), gw.ID)
+	if err != nil {
+		http.Error(w, "could not list disabled capabilities", http.StatusInternalServerError)
+		return
+	}
+	if disabled == nil {
+		disabled = []models.DisabledCapabilityRef{}
+	}
+	writeJSON(w, http.StatusOK, heartbeatResp{DisabledCapabilities: disabled})
 }
 
 type observationServer struct {
@@ -384,4 +403,59 @@ func (s *Server) handleGatewayObservations(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// ── per-capability toggle ────────────────────────────────────────────────
+
+type setCapabilityEnabledReq struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (s *Server) handleSetCapabilityEnabled(w http.ResponseWriter, r *http.Request) {
+	orgID := orgFromCtx(r.Context())
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// serverId is bound by the route for tidy URLs but the cap-belongs-to-org check
+	// is what enforces tenancy; the join also confirms the cap lives under that server.
+	serverID, err := uuid.Parse(chi.URLParam(r, "serverId"))
+	if err != nil {
+		http.Error(w, "invalid server id", http.StatusBadRequest)
+		return
+	}
+	capID, err := uuid.Parse(chi.URLParam(r, "capId"))
+	if err != nil {
+		http.Error(w, "invalid capability id", http.StatusBadRequest)
+		return
+	}
+	var req setCapabilityEnabledReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	ok, err := s.Discovery.CapabilityBelongsToOrgServer(r.Context(), orgID, serverID, capID)
+	if err != nil {
+		http.Error(w, "membership check failed", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err := s.Discovery.SetCapabilityEnabled(r.Context(), capID, req.Enabled, user.ID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "could not update capability", http.StatusInternalServerError)
+		return
+	}
+	det, err := s.Discovery.GetServerDetail(r.Context(), orgID, serverID)
+	if err != nil {
+		http.Error(w, "could not reload server", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, det)
 }

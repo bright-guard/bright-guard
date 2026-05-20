@@ -165,3 +165,9 @@ func SessionFromContext(ctx context.Context) *models.Session {
 	v, _ := ctx.Value(ctxKeySession).(*models.Session)
 	return v
 }
+
+// WithUserForTest is a tiny helper for handler tests that need to bypass the
+// session-cookie middleware and inject a user directly into the request context.
+func WithUserForTest(ctx context.Context, user *models.User) context.Context {
+	return context.WithValue(ctx, ctxKeyUser, user)
+}

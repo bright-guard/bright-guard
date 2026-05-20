@@ -20,6 +20,17 @@ import CallersPage from "./pages/CallersPage";
 import CallerDetailPage from "./pages/CallerDetailPage";
 import DevicePage from "./pages/DevicePage";
 import SessionsPage from "./pages/SessionsPage";
+import MembersPage from "./pages/MembersPage";
+import InvitationPage from "./pages/InvitationPage";
+import AdminShell from "./admin/AdminShell";
+import AdminOverviewPage from "./admin/OverviewPage";
+import AdminUsersPage from "./admin/UsersPage";
+import AdminUserDetailPage from "./admin/UserDetailPage";
+import AdminOrgsPage from "./admin/OrgsPage";
+import AdminOrgDetailPage from "./admin/OrgDetailPage";
+import AdminAdminsPage from "./admin/AdminsPage";
+import AdminAuditPage from "./admin/AuditPage";
+import { RequirePlatformAdmin } from "./admin/RequirePlatformAdmin";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -63,6 +74,24 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="callers" element={<CallersPage />} />
             <Route path="callers/:id" element={<CallerDetailPage />} />
             <Route path="settings/sessions" element={<SessionsPage />} />
+            <Route path="settings/members" element={<MembersPage />} />
+            <Route path="invitations/:id" element={<InvitationPage />} />
+          </Route>
+          <Route
+            path="/admin"
+            element={
+              <RequirePlatformAdmin>
+                <AdminShell />
+              </RequirePlatformAdmin>
+            }
+          >
+            <Route index element={<AdminOverviewPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="users/:id" element={<AdminUserDetailPage />} />
+            <Route path="orgs" element={<AdminOrgsPage />} />
+            <Route path="orgs/:id" element={<AdminOrgDetailPage />} />
+            <Route path="admins" element={<AdminAdminsPage />} />
+            <Route path="audit" element={<AdminAuditPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>

@@ -1,13 +1,24 @@
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { api } from "../api/client";
+import type { Invitation } from "../api/types";
 
 export default function AppShell() {
   const { user, memberships, activeOrgId, setActiveOrg, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<Invitation[]>([]);
 
   const active =
     memberships.find((m) => m.org.id === activeOrgId) ?? memberships[0];
+
+  // Poll once on mount — pending invites are low-frequency and the banner can
+  // wait for the next page navigation to refresh.
+  useEffect(() => {
+    api<Invitation[]>("/api/me/invitations")
+      .then((list) => setPendingInvites(list ?? []))
+      .catch(() => setPendingInvites([]));
+  }, [activeOrgId]);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -67,6 +78,23 @@ export default function AppShell() {
         </div>
       </header>
 
+      {pendingInvites.length > 0 && (
+        <div className="border-b border-brand-700/60 bg-brand-900/40 text-brand-100">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 text-sm">
+            <span>
+              You have {pendingInvites.length} pending invitation
+              {pendingInvites.length === 1 ? "" : "s"}.
+            </span>
+            <Link
+              to={`/app/invitations/${pendingInvites[0].id}`}
+              className="rounded-md border border-brand-500 px-3 py-1 text-xs text-brand-100 hover:bg-brand-900/60"
+            >
+              Review
+            </Link>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto flex w-full max-w-7xl flex-1 gap-6 px-4 py-6">
         <aside className="w-52 shrink-0">
           <nav className="flex flex-col gap-1 text-sm">
@@ -76,6 +104,7 @@ export default function AppShell() {
             <SideLink to="/app/mcp-connections">MCP Connections</SideLink>
             <SideLink to="/app/activity">Activity</SideLink>
             <SideLink to="/app/callers">Callers</SideLink>
+            <SideLink to="/app/settings/members">Members</SideLink>
             <SideLink to="/app/settings/sessions">Sessions</SideLink>
           </nav>
         </aside>

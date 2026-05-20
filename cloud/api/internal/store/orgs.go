@@ -112,6 +112,70 @@ func (s *Orgs) ListForUser(ctx context.Context, userID uuid.UUID) ([]models.Memb
 	return out, rows.Err()
 }
 
+// Get fetches a single org by id.
+func (s *Orgs) Get(ctx context.Context, orgID uuid.UUID) (*models.Org, error) {
+	const q = `select id, name, slug, created_by, created_at from orgs where id = $1`
+	o := &models.Org{}
+	err := s.Pool.QueryRow(ctx, q, orgID).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedBy, &o.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
+// RoleFor returns the user's role in an org, or ErrNotFound if they aren't a
+// member.
+func (s *Orgs) RoleFor(ctx context.Context, userID, orgID uuid.UUID) (models.OrgRole, error) {
+	const q = `select role from org_members where user_id = $1 and org_id = $2`
+	var role models.OrgRole
+	err := s.Pool.QueryRow(ctx, q, userID, orgID).Scan(&role)
+	if err == pgx.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+// ListMembers returns all members of an org joined with their user record.
+func (s *Orgs) ListMembers(ctx context.Context, orgID uuid.UUID) ([]models.Member, error) {
+	const q = `
+		select u.id, u.email, u.display_name, u.avatar_url, m.role, m.created_at
+		from org_members m
+		join users u on u.id = m.user_id
+		where m.org_id = $1
+		order by m.created_at asc`
+	rows, err := s.Pool.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.Member{}
+	for rows.Next() {
+		var m models.Member
+		if err := rows.Scan(&m.UserID, &m.Email, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// AddMember inserts an org_members row. Idempotent on (org_id, user_id) — on
+// conflict the existing role is preserved.
+func (s *Orgs) AddMember(ctx context.Context, orgID, userID uuid.UUID, role models.OrgRole) error {
+	const q = `
+		insert into org_members (org_id, user_id, role)
+		values ($1, $2, $3)
+		on conflict (org_id, user_id) do nothing`
+	_, err := s.Pool.Exec(ctx, q, orgID, userID, role)
+	return err
+}
+
 func (s *Orgs) UserHasMembership(ctx context.Context, userID, orgID uuid.UUID) (bool, error) {
 	const q = `select 1 from org_members where user_id = $1 and org_id = $2`
 	var x int

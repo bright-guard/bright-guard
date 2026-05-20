@@ -77,15 +77,82 @@ func (d *Discovery) UpsertCapability(ctx context.Context, mcpServerID uuid.UUID,
 			description  = excluded.description,
 			schema       = excluded.schema,
 			last_seen_at = now()
-		returning id, mcp_server_id, kind, name, description, schema, first_seen_at, last_seen_at`
+		returning id, mcp_server_id, kind, name, description, schema, first_seen_at, last_seen_at, enabled, disabled_at, disabled_by`
 	c := &models.MCPCapability{}
 	err := d.Pool.QueryRow(ctx, q, mcpServerID, kind, name, description, jsonOrEmpty(schema)).Scan(
 		&c.ID, &c.MCPServerID, &c.Kind, &c.Name, &c.Description, &c.Schema, &c.FirstSeenAt, &c.LastSeenAt,
+		&c.Enabled, &c.DisabledAt, &c.DisabledBy,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// SetCapabilityEnabled flips the per-capability toggle. The caller must already
+// have proven the cap belongs to a server in their org (handler enforces the join).
+// When enabling, disabled_at / disabled_by are cleared; when disabling, both are stamped.
+func (d *Discovery) SetCapabilityEnabled(ctx context.Context, capID uuid.UUID, enabled bool, byUser uuid.UUID) error {
+	const q = `
+		update mcp_capabilities
+		set enabled     = $2,
+		    disabled_at = case when $2 then null else now() end,
+		    disabled_by = case when $2 then null else $3 end
+		where id = $1`
+	tag, err := d.Pool.Exec(ctx, q, capID, enabled, byUser)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CapabilityBelongsToOrgServer returns true when the cap exists, lives under
+// the named server, and that server is owned by orgID. A single join enforces
+// tenancy for the PATCH toggle.
+func (d *Discovery) CapabilityBelongsToOrgServer(ctx context.Context, orgID, serverID, capID uuid.UUID) (bool, error) {
+	const q = `
+		select 1
+		from mcp_capabilities c
+		join mcp_servers s on s.id = c.mcp_server_id
+		where c.id = $1 and s.id = $2 and s.org_id = $3`
+	var one int
+	err := d.Pool.QueryRow(ctx, q, capID, serverID, orgID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ListDisabledCapabilitiesForGateway returns the (server, kind, name) tuples that
+// are currently disabled across all MCP servers reported by this gateway. The shim
+// uses this on every heartbeat to refresh its local denylist.
+func (d *Discovery) ListDisabledCapabilitiesForGateway(ctx context.Context, gatewayID uuid.UUID) ([]models.DisabledCapabilityRef, error) {
+	const q = `
+		select s.name, c.kind, c.name
+		from mcp_capabilities c
+		join mcp_servers s on s.id = c.mcp_server_id
+		where s.gateway_id = $1 and c.enabled = false
+		order by s.name, c.kind, c.name`
+	rows, err := d.Pool.Query(ctx, q, gatewayID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.DisabledCapabilityRef{}
+	for rows.Next() {
+		var ref models.DisabledCapabilityRef
+		if err := rows.Scan(&ref.ServerName, &ref.Kind, &ref.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }
 
 func (d *Discovery) InsertInvocation(ctx context.Context, orgID, mcpServerID uuid.UUID, capabilityKind, capabilityName string, caller json.RawMessage, status string, latencyMs int, at time.Time) error {
@@ -114,12 +181,15 @@ func (d *Discovery) ListServers(ctx context.Context, orgID uuid.UUID) ([]models.
 		       s.exposure_state, s.exposure_reason, s.exposure_classified_at,
 		       coalesce(g.name, '') as gateway_name,
 		       coalesce(mc.name, '') as connection_name,
-		       coalesce(c.cnt, 0) as capability_count
+		       coalesce(c.cnt, 0) as capability_count,
+		       coalesce(c.disabled_cnt, 0) as disabled_capability_count
 		from mcp_servers s
 		left join gateways g on g.id = s.gateway_id
 		left join mcp_connections mc on mc.id = s.connection_id
 		left join (
-			select mcp_server_id, count(*) as cnt
+			select mcp_server_id,
+			       count(*) as cnt,
+			       count(*) filter (where enabled = false) as disabled_cnt
 			from mcp_capabilities
 			group by mcp_server_id
 		) c on c.mcp_server_id = s.id
@@ -137,7 +207,7 @@ func (d *Discovery) ListServers(ctx context.Context, orgID uuid.UUID) ([]models.
 			&s.ID, &s.OrgID, &s.GatewayID, &s.ConnectionID, &s.Name, &s.Address, &s.Transport, &s.Version, &s.Metadata,
 			&s.FirstSeenAt, &s.LastSeenAt,
 			&s.ExposureState, &s.ExposureReason, &s.ExposureClassifiedAt,
-			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount,
+			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount, &s.DisabledCapabilityCount,
 		); err != nil {
 			return nil, err
 		}
@@ -153,11 +223,14 @@ func (d *Discovery) ListServersForGateway(ctx context.Context, orgID, gatewayID 
 		       s.exposure_state, s.exposure_reason, s.exposure_classified_at,
 		       g.name as gateway_name,
 		       '' as connection_name,
-		       coalesce(c.cnt, 0) as capability_count
+		       coalesce(c.cnt, 0) as capability_count,
+		       coalesce(c.disabled_cnt, 0) as disabled_capability_count
 		from mcp_servers s
 		join gateways g on g.id = s.gateway_id
 		left join (
-			select mcp_server_id, count(*) as cnt
+			select mcp_server_id,
+			       count(*) as cnt,
+			       count(*) filter (where enabled = false) as disabled_cnt
 			from mcp_capabilities
 			group by mcp_server_id
 		) c on c.mcp_server_id = s.id
@@ -175,7 +248,7 @@ func (d *Discovery) ListServersForGateway(ctx context.Context, orgID, gatewayID 
 			&s.ID, &s.OrgID, &s.GatewayID, &s.ConnectionID, &s.Name, &s.Address, &s.Transport, &s.Version, &s.Metadata,
 			&s.FirstSeenAt, &s.LastSeenAt,
 			&s.ExposureState, &s.ExposureReason, &s.ExposureClassifiedAt,
-			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount,
+			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount, &s.DisabledCapabilityCount,
 		); err != nil {
 			return nil, err
 		}
@@ -209,9 +282,14 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 	}
 
 	const cq = `
-		select id, mcp_server_id, kind, name, description, schema, first_seen_at, last_seen_at
-		from mcp_capabilities where mcp_server_id = $1
-		order by kind, name`
+		select c.id, c.mcp_server_id, c.kind, c.name, c.description, c.schema,
+		       c.first_seen_at, c.last_seen_at,
+		       c.enabled, c.disabled_at, c.disabled_by,
+		       coalesce(u.email, '') as disabled_by_email
+		from mcp_capabilities c
+		left join users u on u.id = c.disabled_by
+		where c.mcp_server_id = $1
+		order by c.kind, c.name`
 	crows, err := d.Pool.Query(ctx, cq, id)
 	if err != nil {
 		return nil, err
@@ -220,7 +298,11 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 	det.Capabilities = []models.MCPCapability{}
 	for crows.Next() {
 		var c models.MCPCapability
-		if err := crows.Scan(&c.ID, &c.MCPServerID, &c.Kind, &c.Name, &c.Description, &c.Schema, &c.FirstSeenAt, &c.LastSeenAt); err != nil {
+		if err := crows.Scan(
+			&c.ID, &c.MCPServerID, &c.Kind, &c.Name, &c.Description, &c.Schema,
+			&c.FirstSeenAt, &c.LastSeenAt,
+			&c.Enabled, &c.DisabledAt, &c.DisabledBy, &c.DisabledByEmail,
+		); err != nil {
 			return nil, err
 		}
 		det.Capabilities = append(det.Capabilities, c)

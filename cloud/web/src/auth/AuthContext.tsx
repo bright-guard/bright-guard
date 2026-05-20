@@ -34,6 +34,7 @@ export type Me = {
   user: User;
   memberships: Membership[];
   activeOrgId: string | null;
+  platformAdmin: boolean;
 };
 
 type AuthState = {
@@ -42,6 +43,7 @@ type AuthState = {
   memberships: Membership[];
   activeOrgId: string | null;
   devLoginEnabled: boolean;
+  platformAdmin: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   setActiveOrg: (orgId: string) => Promise<void>;
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [devLoginEnabled, setDevLoginEnabled] = useState(false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -62,15 +65,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me.user);
       setMemberships(me.memberships ?? []);
       setActiveOrgId(me.activeOrgId ?? null);
+      setPlatformAdmin(!!me.platformAdmin);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);
         setMemberships([]);
         setActiveOrgId(null);
+        setPlatformAdmin(false);
       } else {
         // network error etc — log and clear
         console.error("refresh failed", err);
         setUser(null);
+        setPlatformAdmin(false);
       }
     } finally {
       setLoading(false);
@@ -89,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setMemberships([]);
     setActiveOrgId(null);
+    setPlatformAdmin(false);
   }, []);
 
   const setActiveOrg = useCallback(
@@ -109,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberships,
       activeOrgId,
       devLoginEnabled,
+      platformAdmin,
       refresh,
       logout,
       setActiveOrg,
@@ -119,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberships,
       activeOrgId,
       devLoginEnabled,
+      platformAdmin,
       refresh,
       logout,
       setActiveOrg,

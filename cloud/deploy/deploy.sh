@@ -52,7 +52,7 @@ gcloud run deploy "${SERVICE}" \
   --min-instances=0 \
   --max-instances=4 \
   --add-cloudsql-instances="${SQL_CONNECTION}" \
-  --set-env-vars="APP_BASE_URL=${BASE_URL},WEB_BASE_URL=${BASE_URL},SESSION_COOKIE_SECURE=true,DEV_LOGIN_ENABLED=false,SERVE_SPA=true" \
+  --set-env-vars="APP_BASE_URL=${BASE_URL},WEB_BASE_URL=${BASE_URL},SESSION_COOKIE_SECURE=true,DEV_LOGIN_ENABLED=false,SERVE_SPA=true,EMAIL_PROVIDER=${EMAIL_PROVIDER:-gcp_email},EMAIL_FROM=${EMAIL_FROM:-noreply@mcp-governance.infoblox.dev}" \
   --set-env-vars="^|^ALLOWED_HOSTS=${ALLOWED_HOSTS:-mcp-governance.infoblox.dev,bright-guard-cy6ozp2w3a-uc.a.run.app}" \
   --set-env-vars="^~^DATABASE_URL=${DATABASE_URL}" \
   --update-secrets="SESSION_SECRET=session-secret:latest,GOOGLE_CLIENT_ID=google-client-id:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest"

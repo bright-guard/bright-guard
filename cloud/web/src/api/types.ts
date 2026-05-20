@@ -53,6 +53,7 @@ export type MCPServerWithCounts = MCPServer & {
   gatewayName: string;
   connectionName: string;
   capabilityCount: number;
+  disabledCapabilityCount: number;
 };
 
 export type MCPConnectionStatus =
@@ -115,6 +116,10 @@ export type MCPCapability = {
   schema: Record<string, unknown>;
   firstSeenAt: string;
   lastSeenAt: string;
+  enabled: boolean;
+  disabledAt: string | null;
+  disabledBy: string | null;
+  disabledByEmail?: string;
 };
 
 export type MCPInvocation = {
@@ -204,6 +209,41 @@ export type OrgCallerDetail = OrgCaller & {
   recentInvocations: MCPInvocation[];
 };
 
+export type OrgRole = "owner" | "admin" | "member";
+
+export type Member = {
+  userId: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string;
+  role: OrgRole;
+  joinedAt: string;
+};
+
+export type InvitationStatus =
+  | "pending"
+  | "accepted"
+  | "declined"
+  | "revoked"
+  | "expired";
+
+export type Invitation = {
+  id: string;
+  orgId: string;
+  orgName: string;
+  orgSlug: string;
+  email: string;
+  invitedBy: string;
+  inviterEmail: string;
+  inviterName: string;
+  role: OrgRole;
+  status: InvitationStatus;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export type Session = {
   id: string;
   kind: "cookie" | "cli";
@@ -212,4 +252,138 @@ export type Session = {
   createdAt: string;
   lastSeenAt: string;
   expiresAt: string;
+};
+
+// --- Platform-admin (backoffice) shapes ---
+
+export type PlatformOverview = {
+  users: { total: number; active30d: number; newLast7d: number };
+  orgs: { total: number; newLast7d: number };
+  gateways: { total: number; online: number };
+  mcpServers: { total: number; publicExposure: number };
+  capabilities: {
+    total: number;
+    byKind: { tool: number; resource: number; prompt: number };
+  };
+  invocations: { last24h: number; last7d: number; denied24h: number };
+  connections: { total: number; oauthPending: number; needsReauth: number };
+  callers: { total: number; flaggedNew: number };
+};
+
+export type PlatformUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string;
+  createdAt: string;
+  orgCount: number;
+  lastSeenAt: string | null;
+  suspendedAt: string | null;
+  platformAdmin: boolean;
+};
+
+export type PlatformUserOrgRef = {
+  id: string;
+  name: string;
+  slug: string;
+  role: "owner" | "admin" | "member" | string;
+};
+
+export type PlatformUserDetail = PlatformUser & {
+  orgs: PlatformUserOrgRef[];
+  sessionCount: number;
+  lastActivityAt: string | null;
+};
+
+export type PlatformUserListResp = {
+  items: PlatformUser[];
+  nextCursor: string | null;
+};
+
+export type PlatformOrg = {
+  id: string;
+  name: string;
+  slug: string;
+  createdBy: string;
+  createdAt: string;
+  memberCount: number;
+  gatewayCount: number;
+  mcpServerCount: number;
+  connectionCount: number;
+  lastActivityAt: string | null;
+  suspendedAt: string | null;
+};
+
+export type PlatformOrgMember = {
+  userId: string;
+  email: string;
+  displayName: string;
+  role: string;
+};
+
+export type PlatformOrgGateway = {
+  id: string;
+  name: string;
+  status: string;
+  lastSeenAt: string | null;
+};
+
+export type PlatformOrgConnection = {
+  id: string;
+  name: string;
+  status: string;
+  oauthStatus: string;
+};
+
+export type PlatformOrgMCPServer = {
+  id: string;
+  name: string;
+  exposureState: ExposureState;
+  lastSeenAt: string;
+};
+
+export type PlatformOrgDetail = PlatformOrg & {
+  members: PlatformOrgMember[];
+  gateways: PlatformOrgGateway[];
+  connections: PlatformOrgConnection[];
+  mcpServers: PlatformOrgMCPServer[];
+};
+
+export type PlatformOrgListResp = {
+  items: PlatformOrg[];
+  nextCursor: string | null;
+};
+
+export type PlatformAdmin = {
+  userId: string;
+  email: string;
+  displayName: string;
+  addedBy: string | null;
+  addedByEmail: string;
+  addedAt: string;
+};
+
+export type PlatformAdminListResp = {
+  items: PlatformAdmin[];
+};
+
+export type PlatformAuditEntry = {
+  id: string;
+  actorId: string;
+  actorEmail: string;
+  action: string;
+  targetKind: string;
+  targetId: string;
+  details: Record<string, unknown>;
+  at: string;
+};
+
+export type PlatformAuditListResp = {
+  items: PlatformAuditEntry[];
+  nextCursor: string | null;
+};
+
+export type PlatformActivityListResp = {
+  items: ActivityRow[];
+  nextCursor: string | null;
 };

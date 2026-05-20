@@ -17,6 +17,7 @@ import (
 	"github.com/bright-guard/bright-guard/cloud/api/internal/auth"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/db"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/scheduler"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/store"
 )
@@ -67,6 +68,26 @@ func main() {
 	}
 	connections := &store.Connections{Pool: pool, AEAD: aead}
 	callers := &store.Callers{Pool: pool}
+	invitations := &store.Invitations{Pool: pool}
+	platform := &store.Platform{Pool: pool, SeedEmails: cfg.PlatformAdminSeedEmails}
+	users.Platform = platform
+
+	// Build the configured mail sender. Stub is the default for local dev; we
+	// only fall through to gcp_email when explicitly requested AND credentials
+	// resolve. On failure we log loudly and fall back to the stub so the API
+	// still boots — better to drop one email than to crash a release.
+	var mailer email.Sender = &email.StubSender{From: cfg.EmailFrom}
+	if cfg.EmailProvider == "gcp_email" {
+		gcp, err := email.NewGCPSender(rootCtx, cfg.GCPProject, cfg.GCPEmailLocation, cfg.EmailFrom)
+		if err != nil {
+			log.Printf("email: gcp init failed, falling back to stub: %v", err)
+		} else {
+			mailer = gcp
+			log.Printf("email: using GCP Cloud Email (project=%s from=%s)", cfg.GCPProject, cfg.EmailFrom)
+		}
+	} else {
+		log.Printf("email: using stub sender (EMAIL_PROVIDER=%q from=%s)", cfg.EmailProvider, cfg.EmailFrom)
+	}
 
 	discoveryInterval := time.Hour
 	if v := os.Getenv("DISCOVERY_INTERVAL_MINUTES"); v != "" {
@@ -122,6 +143,9 @@ func main() {
 		DeviceAuth:  deviceAuth,
 		Connections: connections,
 		Callers:     callers,
+		Invitations: invitations,
+		Email:       mailer,
+		Platform:    platform,
 		Scheduler:   sched,
 		Google:      google,
 		Dev:         dev,

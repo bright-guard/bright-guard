@@ -12,6 +12,7 @@ import (
 
 	"github.com/bright-guard/bright-guard/cloud/api/internal/auth"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/config"
+	"github.com/bright-guard/bright-guard/cloud/api/internal/email"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/models"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/scheduler"
 	"github.com/bright-guard/bright-guard/cloud/api/internal/spa"
@@ -29,6 +30,9 @@ type Server struct {
 	DeviceAuth  *store.DeviceAuth
 	Connections *store.Connections
 	Callers     *store.Callers
+	Invitations *store.Invitations
+	Email       email.Sender
+	Platform    *store.Platform
 	Scheduler   *scheduler.Scheduler
 	Google      *auth.Google // may be nil if not configured
 	Dev         *auth.DevLogin
@@ -106,6 +110,7 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/mcp-servers", s.handleListServers)
 			r.Get("/mcp-servers/{serverId}", s.handleGetServer)
+			r.Patch("/mcp-servers/{serverId}/capabilities/{capId}", s.handleSetCapabilityEnabled)
 			r.Post("/mcp-servers/{id}/reclassify-exposure", s.handleReclassifyExposure)
 
 			r.Get("/exposures", s.handleListExposures)
@@ -123,6 +128,44 @@ func (s *Server) Router() http.Handler {
 			r.Get("/callers", s.handleListCallers)
 			r.Get("/callers/{id}", s.handleGetCaller)
 			r.Post("/callers/{id}/acknowledge", s.handleAcknowledgeCaller)
+
+			// Org membership & invitations. Read endpoints are open to any
+			// member; the write endpoints below require owner/admin.
+			r.Get("/members", s.handleListMembers)
+			r.Get("/invitations", s.handleListInvitations)
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireOrgRole(s.Orgs, orgIDFromURL, models.RoleOwner, models.RoleAdmin))
+				r.Post("/invitations", s.handleCreateInvitation)
+				r.Delete("/invitations/{id}", s.handleRevokeInvitation)
+			})
+		})
+
+		// Invitee-facing routes. These are NOT under orgMember because the
+		// caller may not yet be a member of the inviting org.
+		r.Get("/api/me/invitations", s.handleListMyInvitations)
+		r.Post("/api/invitations/{id}/accept", s.handleAcceptInvitation)
+		r.Post("/api/invitations/{id}/decline", s.handleDeclineInvitation)
+
+		// Platform-admin (backoffice) routes. RequirePlatformAdmin is stacked
+		// on RequireUser so unauthenticated callers get 401 and non-admin
+		// tenants get 403.
+		r.Route("/api/platform", func(r chi.Router) {
+			r.Use(auth.RequirePlatformAdmin(s.Platform))
+			r.Get("/overview", s.handlePlatformOverview)
+			r.Get("/activity", s.handlePlatformActivity)
+			r.Get("/users", s.handlePlatformListUsers)
+			r.Get("/users/{id}", s.handlePlatformGetUser)
+			r.Post("/users/{id}/suspend", s.handlePlatformSuspendUser)
+			r.Post("/users/{id}/unsuspend", s.handlePlatformUnsuspendUser)
+			r.Delete("/users/{id}", s.handlePlatformDeleteUser)
+			r.Post("/users/{id}/promote", s.handlePlatformPromote)
+			r.Post("/users/{id}/demote", s.handlePlatformDemote)
+			r.Get("/orgs", s.handlePlatformListOrgs)
+			r.Get("/orgs/{id}", s.handlePlatformGetOrg)
+			r.Post("/orgs/{id}/suspend", s.handlePlatformSuspendOrg)
+			r.Delete("/orgs/{id}", s.handlePlatformDeleteOrg)
+			r.Get("/admins", s.handlePlatformListAdmins)
+			r.Get("/audit", s.handlePlatformAudit)
 		})
 	})
 
@@ -185,10 +228,20 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if memberships == nil {
 		memberships = []models.Membership{}
 	}
+	platformAdmin := false
+	if s.Platform != nil {
+		// Best-effort: a DB blip shouldn't make /api/me fail.
+		if ok, err := s.Platform.IsActiveAdmin(r.Context(), user.ID); err == nil {
+			platformAdmin = ok
+		} else {
+			log.Printf("me: platform admin check: %v", err)
+		}
+	}
 	resp := map[string]any{
-		"user":        user,
-		"memberships": memberships,
-		"activeOrgId": sess.ActiveOrgID,
+		"user":          user,
+		"memberships":   memberships,
+		"activeOrgId":   sess.ActiveOrgID,
+		"platformAdmin": platformAdmin,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

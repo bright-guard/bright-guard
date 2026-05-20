@@ -8,12 +8,13 @@ import (
 )
 
 type User struct {
-	ID            uuid.UUID `json:"id"`
-	Email         string    `json:"email"`
-	DisplayName   string    `json:"displayName"`
-	AvatarURL     string    `json:"avatarUrl"`
-	GoogleSubject string    `json:"-"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            uuid.UUID  `json:"id"`
+	Email         string     `json:"email"`
+	DisplayName   string     `json:"displayName"`
+	AvatarURL     string     `json:"avatarUrl"`
+	GoogleSubject string     `json:"-"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	SuspendedAt   *time.Time `json:"suspendedAt,omitempty"`
 }
 
 type Org struct {
@@ -90,20 +91,33 @@ type MCPServer struct {
 
 type MCPServerWithCounts struct {
 	MCPServer
-	GatewayName     string `json:"gatewayName"`
-	ConnectionName  string `json:"connectionName"`
-	CapabilityCount int    `json:"capabilityCount"`
+	GatewayName             string `json:"gatewayName"`
+	ConnectionName          string `json:"connectionName"`
+	CapabilityCount         int    `json:"capabilityCount"`
+	DisabledCapabilityCount int    `json:"disabledCapabilityCount"`
 }
 
 type MCPCapability struct {
-	ID          uuid.UUID       `json:"id"`
-	MCPServerID uuid.UUID       `json:"mcpServerId"`
-	Kind        string          `json:"kind"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Schema      json.RawMessage `json:"schema"`
-	FirstSeenAt time.Time       `json:"firstSeenAt"`
-	LastSeenAt  time.Time       `json:"lastSeenAt"`
+	ID              uuid.UUID       `json:"id"`
+	MCPServerID     uuid.UUID       `json:"mcpServerId"`
+	Kind            string          `json:"kind"`
+	Name            string          `json:"name"`
+	Description     string          `json:"description"`
+	Schema          json.RawMessage `json:"schema"`
+	FirstSeenAt     time.Time       `json:"firstSeenAt"`
+	LastSeenAt      time.Time       `json:"lastSeenAt"`
+	Enabled         bool            `json:"enabled"`
+	DisabledAt      *time.Time      `json:"disabledAt,omitempty"`
+	DisabledBy      *uuid.UUID      `json:"disabledBy,omitempty"`
+	DisabledByEmail string          `json:"disabledByEmail,omitempty"`
+}
+
+// DisabledCapabilityRef is the wire shape returned to gateways in the heartbeat
+// response so the shim can honor per-capability disable without storing IDs.
+type DisabledCapabilityRef struct {
+	ServerName string `json:"serverName"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
 }
 
 type MCPInvocation struct {
@@ -171,6 +185,35 @@ type OrgCallerDetail struct {
 	OrgCaller
 	TopServers       []OrgCallerTopServer `json:"topServers"`
 	RecentInvocations []MCPInvocation     `json:"recentInvocations"`
+}
+
+// Invitation is an outstanding/decided org invite addressed to a single email.
+// Status is one of: pending | accepted | declined | revoked | expired.
+type Invitation struct {
+	ID           uuid.UUID  `json:"id"`
+	OrgID        uuid.UUID  `json:"orgId"`
+	OrgName      string     `json:"orgName"`
+	OrgSlug      string     `json:"orgSlug"`
+	Email        string     `json:"email"`
+	InvitedBy    uuid.UUID  `json:"invitedBy"`
+	InviterEmail string     `json:"inviterEmail"`
+	InviterName  string     `json:"inviterName"`
+	Role         OrgRole    `json:"role"`
+	Status       string     `json:"status"`
+	AcceptedAt   *time.Time `json:"acceptedAt,omitempty"`
+	DeclinedAt   *time.Time `json:"declinedAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	ExpiresAt    time.Time  `json:"expiresAt"`
+}
+
+// Member is one row of an org's membership list with the joined user fields.
+type Member struct {
+	UserID      uuid.UUID `json:"userId"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	AvatarURL   string    `json:"avatarUrl"`
+	Role        OrgRole   `json:"role"`
+	JoinedAt    time.Time `json:"joinedAt"`
 }
 
 type MCPConnection struct {
