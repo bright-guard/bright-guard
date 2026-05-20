@@ -37,6 +37,12 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-3">
+            <Link
+              to="/docs"
+              className="rounded-md border border-white/15 bg-white/5 px-3 py-1 text-[13px] text-white hover:border-white/30"
+            >
+              Docs
+            </Link>
             <select
               value={active?.org.id ?? ""}
               onChange={(e) => setActiveOrg(e.target.value)}

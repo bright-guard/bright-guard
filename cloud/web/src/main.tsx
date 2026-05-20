@@ -33,6 +33,8 @@ import AdminOrgDetailPage from "./admin/OrgDetailPage";
 import AdminAdminsPage from "./admin/AdminsPage";
 import AdminAuditPage from "./admin/AuditPage";
 import { RequirePlatformAdmin } from "./admin/RequirePlatformAdmin";
+import DocsShell, { DocsIndexRedirect } from "./pages/DocsShell";
+import DocsPage from "./pages/DocsPage";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -80,6 +82,17 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="settings/sessions" element={<SessionsPage />} />
             <Route path="settings/members" element={<MembersPage />} />
             <Route path="invitations/:id" element={<InvitationPage />} />
+          </Route>
+          <Route
+            path="/docs"
+            element={
+              <ProtectedRoute>
+                <DocsShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DocsIndexRedirect />} />
+            <Route path="*" element={<DocsPage />} />
           </Route>
           <Route
             path="/admin"

@@ -34,3 +34,105 @@
     color: #212121;
   }
 }
+
+/* Docs prose. Tailwind's official typography plugin is overkill for a 7-page
+   site; this hand-rolled stylesheet covers headings, code blocks, tables,
+   lists, and links to a Stripe-docs level of polish without another dep. */
+.docs-prose {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #1f2937;
+}
+.docs-prose h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  letter-spacing: -0.01em;
+}
+.docs-prose h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 18px;
+}
+.docs-prose h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+.docs-prose p {
+  margin: 0 0 12px;
+}
+.docs-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.docs-prose ul,
+.docs-prose ol {
+  margin: 0 0 12px;
+  padding-left: 1.5rem;
+}
+.docs-prose ul {
+  list-style: disc;
+}
+.docs-prose ol {
+  list-style: decimal;
+}
+.docs-prose li {
+  margin: 4px 0;
+}
+.docs-prose code {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.docs-prose pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.docs-prose pre code {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+.docs-prose blockquote {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  color: #1e293b;
+  border-radius: 0 4px 4px 0;
+}
+.docs-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.docs-prose th,
+.docs-prose td {
+  border: 1px solid #e5e7eb;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.docs-prose th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+.docs-prose hr {
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  margin: 24px 0;
+}
