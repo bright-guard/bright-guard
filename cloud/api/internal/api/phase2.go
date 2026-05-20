@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -533,6 +534,7 @@ func (s *Server) handleSetCapabilityEnabled(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
+		log.Printf("SetCapabilityEnabled cap=%s enabled=%v err=%v", capID, req.Enabled, err)
 		writeError(w, http.StatusInternalServerError, "internal", "could not update capability")
 		return
 	}

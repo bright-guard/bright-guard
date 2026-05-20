@@ -96,8 +96,8 @@ func (d *Discovery) SetCapabilityEnabled(ctx context.Context, capID uuid.UUID, e
 	const q = `
 		update mcp_capabilities
 		set enabled     = $2,
-		    disabled_at = case when $2 then null else now() end,
-		    disabled_by = case when $2 then null else $3 end
+		    disabled_at = case when $2 then null::timestamptz else now() end,
+		    disabled_by = case when $2 then null::uuid else $3::uuid end
 		where id = $1`
 	tag, err := d.Pool.Exec(ctx, q, capID, enabled, byUser)
 	if err != nil {

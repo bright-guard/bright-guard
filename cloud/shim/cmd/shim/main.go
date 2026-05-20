@@ -122,6 +122,23 @@ func main() {
 	policies := newPolicyCache()
 	log.Printf("shim ready: control_plane=%s servers=%d", controlPlane, len(cfg.Servers))
 
+	// Optional HTTP listener so the shim survives as a Cloud Run service.
+	// Cloud Run requires the container to listen on $PORT; without it the
+	// service is killed during startup probes. /healthz always returns 200.
+	if port := os.Getenv("PORT"); port != "" {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		})
+		go func() {
+			srv := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+			log.Printf("healthz listening on :%s", port)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("healthz: %v", err)
+			}
+		}()
+	}
+
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
