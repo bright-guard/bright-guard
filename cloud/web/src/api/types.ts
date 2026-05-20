@@ -16,6 +16,13 @@ export type GatewayCreateResp = {
   expiresAt: string;
 };
 
+export type ExposureState =
+  | "unknown"
+  | "internal"
+  | "cloud_internal"
+  | "public"
+  | "unreachable";
+
 export type MCPServer = {
   id: string;
   orgId: string;
@@ -28,6 +35,18 @@ export type MCPServer = {
   metadata: Record<string, unknown>;
   firstSeenAt: string;
   lastSeenAt: string;
+  exposureState: ExposureState;
+  exposureReason: string;
+  exposureClassifiedAt: string | null;
+};
+
+export type ExposureCount = {
+  state: ExposureState;
+  count: number;
+};
+
+export type ExposureSummary = {
+  counts: ExposureCount[];
 };
 
 export type MCPServerWithCounts = MCPServer & {
@@ -50,6 +69,13 @@ export type MCPConnectionAuthMethod =
 
 export type MCPConnectionTransport = "streamable-http" | "sse" | "http";
 
+export type OAuthStatus =
+  | ""
+  | "pending_authorize"
+  | "authorized"
+  | "expired_refresh"
+  | "needs_reauth";
+
 export type MCPConnection = {
   id: string;
   orgId: string;
@@ -64,6 +90,20 @@ export type MCPConnection = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  oauthStatus: OAuthStatus;
+};
+
+export type OAuthConfigInput = {
+  authorizeUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scopes: string;
+  extraParams?: Record<string, string>;
+};
+
+export type AuthorizeResp = {
+  authorizeUrl: string;
 };
 
 export type MCPCapability = {
@@ -133,6 +173,35 @@ export type ActivitySummary = {
     count: number;
   }[];
   topCallers: { caller: Record<string, unknown>; count: number }[];
+};
+
+export type OrgCaller = {
+  id: string;
+  orgId: string;
+  signature: string;
+  label: string;
+  caller: Record<string, unknown>;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  invocationCount: number;
+  flaggedNew: boolean;
+};
+
+export type OrgCallerListResp = {
+  items: OrgCaller[];
+  nextCursor: string | null;
+  totals: { total: number; flaggedNew: number };
+};
+
+export type OrgCallerTopServer = {
+  mcpServerId: string;
+  name: string;
+  count: number;
+};
+
+export type OrgCallerDetail = OrgCaller & {
+  topServers: OrgCallerTopServer[];
+  recentInvocations: MCPInvocation[];
 };
 
 export type Session = {

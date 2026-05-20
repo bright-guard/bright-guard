@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,9 @@ type Scheduler struct {
 
 	// NewClient is overridable for tests. When nil, mcp.New is used.
 	NewClient func(endpoint, transport string, auth mcp.AuthSecret) ClientLike
+	// NewOAuthClient is overridable for tests. When nil, mcp.NewWithTransport
+	// is used with an OAuth2RoundTripper backed by Connections.
+	NewOAuthClient func(endpoint, transport string, connID uuid.UUID, auth mcp.AuthSecret) ClientLike
 }
 
 // ClientLike is the subset of *mcp.Client the scheduler uses; pulled out so
@@ -50,6 +54,14 @@ func New(conns *store.Connections, disc *store.Discovery, interval time.Duration
 		Interval:    interval,
 		NewClient: func(endpoint, transport string, auth mcp.AuthSecret) ClientLike {
 			return mcp.New(endpoint, transport, auth)
+		},
+		NewOAuthClient: func(endpoint, transport string, connID uuid.UUID, auth mcp.AuthSecret) ClientLike {
+			rt := &mcp.OAuth2RoundTripper{
+				Base:         http.DefaultTransport,
+				ConnectionID: connID,
+				Store:        conns,
+			}
+			return mcp.NewWithTransport(endpoint, transport, rt, auth)
 		},
 	}
 }
@@ -111,7 +123,19 @@ func (s *Scheduler) Discover(ctx context.Context, connID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	cli := s.NewClient(conn.EndpointURL, conn.Transport, secret)
+	// OAuth connections that haven't completed the authorize dance can't be
+	// probed — there's no token to send. Treat as a no-op (the ListDue query
+	// also filters these out for the periodic sweep, but the create-handler
+	// short-circuits here when it lands on a pending row).
+	if conn.AuthMethod == models.AuthMethodOAuth2Authcode && conn.OAuthStatus != models.OAuthStatusAuthorized {
+		return nil
+	}
+	var cli ClientLike
+	if conn.AuthMethod == models.AuthMethodOAuth2Authcode && s.NewOAuthClient != nil {
+		cli = s.NewOAuthClient(conn.EndpointURL, conn.Transport, conn.ID, secret)
+	} else {
+		cli = s.NewClient(conn.EndpointURL, conn.Transport, secret)
+	}
 
 	info, err := cli.Initialize(ctx)
 	if err != nil {
@@ -180,6 +204,10 @@ func (s *Scheduler) recordError(ctx context.Context, conn *models.MCPConnection,
 	status := "error"
 	if errors.Is(err, mcp.ErrUnauthorized) {
 		status = "unauthorized"
+	}
+	if errors.Is(err, mcp.ErrOAuth2NeedsReauth) {
+		status = "unauthorized"
+		_ = s.Connections.UpdateOAuthStatus(ctx, conn.ID, models.OAuthStatusNeedsReauth)
 	}
 	if err2 := s.Connections.UpdateAfterDiscovery(ctx, conn.ID, nil, status, err.Error()); err2 != nil {
 		log.Printf("scheduler: record-error update: %v", err2)

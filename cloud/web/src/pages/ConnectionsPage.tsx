@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { MCPConnection } from "../api/types";
+import type {
+  AuthorizeResp,
+  MCPConnection,
+  OAuthStatus,
+} from "../api/types";
 import { relativeTime } from "../lib/time";
 import AddConnectionWizard from "./AddConnectionWizard";
 
@@ -26,12 +31,33 @@ const AUTH_LABEL: Record<MCPConnection["authMethod"], string> = {
   oauth2_authcode: "OAuth2",
 };
 
+const OAUTH_CHIP: Record<Exclude<OAuthStatus, "">, { label: string; cls: string }> = {
+  pending_authorize: {
+    label: "Pending authorization",
+    cls: "bg-amber-950/60 text-amber-300 border-amber-700/60",
+  },
+  authorized: {
+    label: "Authorized",
+    cls: "bg-emerald-950/60 text-emerald-300 border-emerald-700/60",
+  },
+  expired_refresh: {
+    label: "Token expired",
+    cls: "bg-amber-950/60 text-amber-300 border-amber-700/60",
+  },
+  needs_reauth: {
+    label: "Needs re-auth",
+    cls: "bg-rose-950/60 text-rose-300 border-rose-700/60",
+  },
+};
+
 export default function ConnectionsPage() {
   const { activeOrgId } = useAuth();
   const [conns, setConns] = useState<MCPConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   async function reload() {
     if (!activeOrgId) return;
@@ -51,6 +77,26 @@ export default function ConnectionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
+  // OAuth callback redirects land here with ?connection=...&status=ok|error.
+  // Surface a one-shot toast and strip the query so refreshes don't re-fire it.
+  useEffect(() => {
+    const status = searchParams.get("status");
+    const reason = searchParams.get("reason");
+    if (!status) return;
+    if (status === "ok") {
+      setToast("Connection authorized.");
+    } else {
+      setToast(`OAuth authorization failed${reason ? `: ${reason}` : ""}.`);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("status");
+    next.delete("reason");
+    next.delete("connection");
+    setSearchParams(next, { replace: true });
+    const id = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [searchParams, setSearchParams]);
+
   async function discover(id: string) {
     if (!activeOrgId) return;
     setBusy(id);
@@ -62,6 +108,21 @@ export default function ConnectionsPage() {
     } catch (err) {
       console.error("discover failed", err);
     } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reauthorize(id: string) {
+    if (!activeOrgId) return;
+    setBusy(id);
+    try {
+      const returnTo = encodeURIComponent("/app/mcp-connections");
+      const auth = await api<AuthorizeResp>(
+        `/api/orgs/${activeOrgId}/mcp-connections/${id}/authorize?returnTo=${returnTo}`,
+      );
+      window.location.href = auth.authorizeUrl;
+    } catch (err) {
+      console.error("authorize failed", err);
       setBusy(null);
     }
   }
@@ -84,6 +145,11 @@ export default function ConnectionsPage() {
 
   return (
     <div className="space-y-6">
+      {toast && (
+        <div className="rounded-md border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm text-slate-200 shadow">
+          {toast}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">MCP Connections</h1>
@@ -127,7 +193,9 @@ export default function ConnectionsPage() {
                 </td>
               </tr>
             )}
-            {conns.map((c) => (
+            {conns.map((c) => {
+              const oauthChip = c.oauthStatus ? OAUTH_CHIP[c.oauthStatus] : null;
+              return (
               <tr key={c.id} className="hover:bg-slate-900/40">
                 <td className="px-4 py-3">
                   <span
@@ -135,10 +203,23 @@ export default function ConnectionsPage() {
                     title={STATUS_LABEL[c.status]}
                   />
                 </td>
-                <td className="px-4 py-3 font-medium text-slate-200">{c.name}</td>
+                <td className="px-4 py-3 font-medium text-slate-200">
+                  <Link to={`/app/mcp-connections/${c.id}`} className="hover:underline">
+                    {c.name}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-400">{c.endpointUrl}</td>
                 <td className="px-4 py-3 text-slate-400">{c.transport}</td>
-                <td className="px-4 py-3 text-slate-400">{AUTH_LABEL[c.authMethod]}</td>
+                <td className="px-4 py-3 text-slate-400">
+                  <div className="flex flex-col gap-1">
+                    <span>{AUTH_LABEL[c.authMethod]}</span>
+                    {oauthChip && (
+                      <span className={`inline-block w-fit rounded-full border px-2 py-0.5 text-[10px] ${oauthChip.cls}`}>
+                        {oauthChip.label}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-slate-400">
                   {relativeTime(c.lastDiscoveredAt)}
                   {c.lastError && (
@@ -148,13 +229,26 @@ export default function ConnectionsPage() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => discover(c.id)}
-                    disabled={busy === c.id}
-                    className="rounded-md border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    {busy === c.id ? "Working…" : "Discover now"}
-                  </button>
+                  {c.authMethod === "oauth2_authcode" &&
+                    (c.oauthStatus === "needs_reauth" ||
+                      c.oauthStatus === "expired_refresh" ||
+                      c.oauthStatus === "pending_authorize") ? (
+                    <button
+                      onClick={() => reauthorize(c.id)}
+                      disabled={busy === c.id}
+                      className="rounded-md border border-amber-700/60 px-3 py-1 text-xs text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
+                    >
+                      {busy === c.id ? "Working…" : "Reauthorize"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => discover(c.id)}
+                      disabled={busy === c.id}
+                      className="rounded-md border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {busy === c.id ? "Working…" : "Discover now"}
+                    </button>
+                  )}
                   <button
                     onClick={() => remove(c.id)}
                     disabled={busy === c.id}
@@ -164,7 +258,8 @@ export default function ConnectionsPage() {
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

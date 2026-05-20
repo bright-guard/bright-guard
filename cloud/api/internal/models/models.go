@@ -72,17 +72,20 @@ type Gateway struct {
 }
 
 type MCPServer struct {
-	ID           uuid.UUID       `json:"id"`
-	OrgID        uuid.UUID       `json:"orgId"`
-	GatewayID    *uuid.UUID      `json:"gatewayId,omitempty"`
-	ConnectionID *uuid.UUID      `json:"connectionId,omitempty"`
-	Name         string          `json:"name"`
-	Address      string          `json:"address"`
-	Transport    string          `json:"transport"`
-	Version      string          `json:"version"`
-	Metadata     json.RawMessage `json:"metadata"`
-	FirstSeenAt  time.Time       `json:"firstSeenAt"`
-	LastSeenAt   time.Time       `json:"lastSeenAt"`
+	ID                   uuid.UUID       `json:"id"`
+	OrgID                uuid.UUID       `json:"orgId"`
+	GatewayID            *uuid.UUID      `json:"gatewayId,omitempty"`
+	ConnectionID         *uuid.UUID      `json:"connectionId,omitempty"`
+	Name                 string          `json:"name"`
+	Address              string          `json:"address"`
+	Transport            string          `json:"transport"`
+	Version              string          `json:"version"`
+	Metadata             json.RawMessage `json:"metadata"`
+	FirstSeenAt          time.Time       `json:"firstSeenAt"`
+	LastSeenAt           time.Time       `json:"lastSeenAt"`
+	ExposureState        string          `json:"exposureState"`
+	ExposureReason       string          `json:"exposureReason"`
+	ExposureClassifiedAt *time.Time      `json:"exposureClassifiedAt,omitempty"`
 }
 
 type MCPServerWithCounts struct {
@@ -128,11 +131,47 @@ type MCPServerDetail struct {
 type AuthMethod string
 
 const (
-	AuthMethodAPIKeyHeader  AuthMethod = "api_key_header"
-	AuthMethodBearer        AuthMethod = "bearer"
-	AuthMethodBasic         AuthMethod = "basic"
-	AuthMethodOAuth2Authcode AuthMethod = "oauth2_authcode" // TODO(#8): not implemented
+	AuthMethodAPIKeyHeader   AuthMethod = "api_key_header"
+	AuthMethodBearer         AuthMethod = "bearer"
+	AuthMethodBasic          AuthMethod = "basic"
+	AuthMethodOAuth2Authcode AuthMethod = "oauth2_authcode"
 )
+
+// OAuth-status values for the oauth_status column on mcp_connections. Only
+// meaningful when AuthMethod == AuthMethodOAuth2Authcode; otherwise blank.
+const (
+	OAuthStatusNone             = ""
+	OAuthStatusPendingAuthorize = "pending_authorize"
+	OAuthStatusAuthorized       = "authorized"
+	OAuthStatusExpiredRefresh   = "expired_refresh"
+	OAuthStatusNeedsReauth      = "needs_reauth"
+)
+
+// OrgCaller is a distinct caller identity observed in mcp_invocations.caller
+// for an org, used by UC9 credential governance (detection-only).
+type OrgCaller struct {
+	ID              uuid.UUID       `json:"id"`
+	OrgID           uuid.UUID       `json:"orgId"`
+	Signature       string          `json:"signature"`
+	Label           string          `json:"label"`
+	Caller          json.RawMessage `json:"caller"`
+	FirstSeenAt     time.Time       `json:"firstSeenAt"`
+	LastSeenAt      time.Time       `json:"lastSeenAt"`
+	InvocationCount int64           `json:"invocationCount"`
+	FlaggedNew      bool            `json:"flaggedNew"`
+}
+
+type OrgCallerTopServer struct {
+	MCPServerID uuid.UUID `json:"mcpServerId"`
+	Name        string    `json:"name"`
+	Count       int64     `json:"count"`
+}
+
+type OrgCallerDetail struct {
+	OrgCaller
+	TopServers       []OrgCallerTopServer `json:"topServers"`
+	RecentInvocations []MCPInvocation     `json:"recentInvocations"`
+}
 
 type MCPConnection struct {
 	ID               uuid.UUID  `json:"id"`
@@ -148,4 +187,5 @@ type MCPConnection struct {
 	CreatedBy        uuid.UUID  `json:"createdBy"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
+	OAuthStatus      string     `json:"oauthStatus"`
 }

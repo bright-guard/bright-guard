@@ -41,9 +41,19 @@ type Client struct {
 // New builds a Client. The HTTP client is wrapped with an AuthRoundTripper so
 // every request carries the configured credential.
 func New(endpoint, transport string, auth AuthSecret) *Client {
+	return NewWithTransport(endpoint, transport, AuthRoundTripper(http.DefaultTransport, auth), auth)
+}
+
+// NewWithTransport is the OAuth-aware constructor: callers can supply their own
+// http.RoundTripper (e.g. OAuth2RoundTripper) that knows how to read + refresh
+// tokens out of the store on every outbound call.
+func NewWithTransport(endpoint, transport string, rt http.RoundTripper, auth AuthSecret) *Client {
+	if rt == nil {
+		rt = AuthRoundTripper(http.DefaultTransport, auth)
+	}
 	hc := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: AuthRoundTripper(http.DefaultTransport, auth),
+		Timeout:   30 * time.Second,
+		Transport: rt,
 	}
 	c := &Client{
 		Endpoint:  endpoint,
@@ -66,9 +76,6 @@ func New(endpoint, transport string, auth AuthSecret) *Client {
 var ErrUnauthorized = errors.New("mcp: unauthorized")
 
 func (c *Client) do(ctx context.Context, method string, params any, out any) error {
-	if c.Auth.Method == "oauth2_authcode" {
-		return ErrAuthMethodUnsupported
-	}
 	id := int(c.nextID.Add(1))
 	req := rpcRequest{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 

@@ -28,6 +28,7 @@ type Server struct {
 	Activity    *store.Activity
 	DeviceAuth  *store.DeviceAuth
 	Connections *store.Connections
+	Callers     *store.Callers
 	Scheduler   *scheduler.Scheduler
 	Google      *auth.Google // may be nil if not configured
 	Dev         *auth.DevLogin
@@ -74,6 +75,11 @@ func (s *Server) Router() http.Handler {
 	r.Post("/oauth/device", s.handleDeviceInitiate)
 	r.Post("/oauth/device/poll", s.handleDevicePoll)
 
+	// OAuth2 authorization-code callback. Reached by the user's browser
+	// directly from the upstream provider; we don't require our session
+	// cookie because the `state` token is the trust anchor.
+	r.Get("/oauth/connect/callback", s.handleOAuthCallback)
+
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireUser)
 		r.Get("/api/me", s.handleMe)
@@ -100,15 +106,23 @@ func (s *Server) Router() http.Handler {
 
 			r.Get("/mcp-servers", s.handleListServers)
 			r.Get("/mcp-servers/{serverId}", s.handleGetServer)
+			r.Post("/mcp-servers/{id}/reclassify-exposure", s.handleReclassifyExposure)
+
+			r.Get("/exposures", s.handleListExposures)
 
 			r.Get("/mcp-connections", s.handleListConnections)
 			r.Post("/mcp-connections", s.handleCreateConnection)
 			r.Get("/mcp-connections/{id}", s.handleGetConnection)
 			r.Delete("/mcp-connections/{id}", s.handleDeleteConnection)
 			r.Post("/mcp-connections/{id}/discover", s.handleDiscoverConnection)
+			r.Get("/mcp-connections/{id}/authorize", s.handleStartOAuthAuthorize)
 
 			r.Get("/activity", s.handleListActivity)
 			r.Get("/activity/summary", s.handleActivitySummary)
+
+			r.Get("/callers", s.handleListCallers)
+			r.Get("/callers/{id}", s.handleGetCaller)
+			r.Post("/callers/{id}/acknowledge", s.handleAcknowledgeCaller)
 		})
 	})
 

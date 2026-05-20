@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { MCPCapability, MCPServerDetail } from "../api/types";
+import type { ExposureState, MCPCapability, MCPServerDetail } from "../api/types";
 import { relativeTime } from "../lib/time";
+import { EXPOSURE_BADGE_CLASS, EXPOSURE_LABEL } from "../lib/exposure";
 
 const KIND_ORDER = ["tool", "resource", "prompt"];
 
@@ -12,6 +13,7 @@ export default function MCPServerDetailPage() {
   const { activeOrgId } = useAuth();
   const [detail, setDetail] = useState<MCPServerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reclassifying, setReclassifying] = useState(false);
 
   useEffect(() => {
     if (!activeOrgId || !id) return;
@@ -19,6 +21,22 @@ export default function MCPServerDetailPage() {
       .then(setDetail)
       .catch((err) => setError(err instanceof ApiError ? `${err.status}` : String(err)));
   }, [activeOrgId, id]);
+
+  const reclassify = async () => {
+    if (!activeOrgId || !id) return;
+    setReclassifying(true);
+    try {
+      const updated = await api<MCPServerDetail>(
+        `/api/orgs/${activeOrgId}/mcp-servers/${id}/reclassify-exposure`,
+        { method: "POST" },
+      );
+      setDetail(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.status}` : String(err));
+    } finally {
+      setReclassifying(false);
+    }
+  };
 
   if (error) return <div className="text-rose-400">Error: {error}</div>;
   if (!detail) return <div className="text-slate-500">Loading…</div>;
@@ -68,6 +86,36 @@ export default function MCPServerDetailPage() {
             </Link>
           </>
         ) : null}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+              Exposure
+            </h2>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <ExposureBadge state={detail.exposureState} />
+              <span className="text-sm text-slate-300">
+                {detail.exposureReason || "no reason recorded"}
+              </span>
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              Last classified{" "}
+              {detail.exposureClassifiedAt
+                ? relativeTime(detail.exposureClassifiedAt)
+                : "never"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={reclassify}
+            disabled={reclassifying}
+            className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:border-slate-500 disabled:opacity-50"
+          >
+            {reclassifying ? "Reclassifying…" : "Re-classify"}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5">
@@ -159,5 +207,15 @@ function Field({ label, value }: { label: string; value: string }) {
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 text-sm text-slate-200">{value}</div>
     </div>
+  );
+}
+
+function ExposureBadge({ state }: { state: ExposureState }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${EXPOSURE_BADGE_CLASS[state]}`}
+    >
+      {EXPOSURE_LABEL[state]}
+    </span>
   );
 }

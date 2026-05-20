@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestAEADRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decrypt: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decrypt = %+v, want %+v", got, want)
 	}
 }
@@ -48,7 +49,7 @@ func TestAEADDecryptEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decrypt(nil): %v", err)
 	}
-	if got != (mcp.AuthSecret{}) {
+	if !reflect.DeepEqual(got, mcp.AuthSecret{}) {
 		t.Fatalf("Decrypt(nil) = %+v, want zero", got)
 	}
 }

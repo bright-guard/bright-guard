@@ -1,12 +1,41 @@
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import type {
+  AuthorizeResp,
   MCPConnection,
   MCPConnectionAuthMethod,
   MCPConnectionTransport,
+  OAuthConfigInput,
 } from "../api/types";
 
 type Step = 1 | 2 | 3;
+
+// Pre-fills for two common providers. Users still supply their own client_id
+// + secret; the URLs and scopes save tedious copy/paste.
+type OAuthPreset = {
+  label: string;
+  authorizeUrl: string;
+  tokenUrl: string;
+  scopes: string;
+  extraParams: string;
+};
+
+const OAUTH_PRESETS: Record<string, OAuthPreset> = {
+  atlassian: {
+    label: "Atlassian Cloud (Jira / Confluence)",
+    authorizeUrl: "https://auth.atlassian.com/authorize",
+    tokenUrl: "https://auth.atlassian.com/oauth/token",
+    scopes: "read:jira-work read:jira-user offline_access",
+    extraParams: '{"audience":"api.atlassian.com","prompt":"consent"}',
+  },
+  notion: {
+    label: "Notion",
+    authorizeUrl: "https://api.notion.com/v1/oauth/authorize",
+    tokenUrl: "https://api.notion.com/v1/oauth/token",
+    scopes: "",
+    extraParams: '{"owner":"user"}',
+  },
+};
 
 export default function AddConnectionWizard({
   orgId,
@@ -30,9 +59,26 @@ export default function AddConnectionWizard({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
+  // OAuth2 form state.
+  const [oauthAuthorize, setOauthAuthorize] = useState("");
+  const [oauthToken, setOauthToken] = useState("");
+  const [oauthClientId, setOauthClientId] = useState("");
+  const [oauthClientSecret, setOauthClientSecret] = useState("");
+  const [oauthScopes, setOauthScopes] = useState("");
+  const [oauthExtraJSON, setOauthExtraJSON] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MCPConnection | null>(null);
+
+  function applyPreset(key: string) {
+    const p = OAUTH_PRESETS[key];
+    if (!p) return;
+    setOauthAuthorize(p.authorizeUrl);
+    setOauthToken(p.tokenUrl);
+    setOauthScopes(p.scopes);
+    setOauthExtraJSON(p.extraParams);
+  }
 
   function step1Ready(): boolean {
     if (!name.trim() || !endpointUrl.trim()) return false;
@@ -44,6 +90,24 @@ export default function AddConnectionWizard({
     }
   }
 
+  function parsedExtraParams(): Record<string, string> | string {
+    const s = oauthExtraJSON.trim();
+    if (s === "") return {};
+    try {
+      const v = JSON.parse(s);
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const out: Record<string, string> = {};
+        for (const [k, val] of Object.entries(v)) {
+          out[k] = String(val);
+        }
+        return out;
+      }
+    } catch (e) {
+      return `Extra params must be a JSON object: ${(e as Error).message}`;
+    }
+    return "Extra params must be a JSON object";
+  }
+
   function step2Ready(): boolean {
     switch (authMethod) {
       case "api_key_header":
@@ -52,8 +116,17 @@ export default function AddConnectionWizard({
         return bearerToken !== "";
       case "basic":
         return username !== "";
-      case "oauth2_authcode":
-        return false;
+      case "oauth2_authcode": {
+        if (!oauthClientId.trim() || !oauthAuthorize.trim() || !oauthToken.trim()) return false;
+        try {
+          const a = new URL(oauthAuthorize);
+          const t = new URL(oauthToken);
+          if (!/^https?:$/.test(a.protocol) || !/^https?:$/.test(t.protocol)) return false;
+        } catch {
+          return false;
+        }
+        return typeof parsedExtraParams() !== "string";
+      }
     }
   }
 
@@ -74,11 +147,36 @@ export default function AddConnectionWizard({
           password: authMethod === "basic" ? password : "",
         },
       };
+      if (authMethod === "oauth2_authcode") {
+        const extra = parsedExtraParams();
+        if (typeof extra === "string") {
+          throw new Error(extra);
+        }
+        const oauthConfig: OAuthConfigInput = {
+          authorizeUrl: oauthAuthorize.trim(),
+          tokenUrl: oauthToken.trim(),
+          clientId: oauthClientId.trim(),
+          clientSecret: oauthClientSecret,
+          scopes: oauthScopes.trim(),
+          extraParams: extra,
+        };
+        body.oauthConfig = oauthConfig;
+      }
       const r = await api<MCPConnection>(
         `/api/orgs/${orgId}/mcp-connections`,
         { method: "POST", body: JSON.stringify(body) },
       );
       setResult(r);
+      // For OAuth2 we immediately kick off the authorize handshake and
+      // navigate the browser away to the provider's consent screen.
+      if (authMethod === "oauth2_authcode") {
+        const returnTo = encodeURIComponent("/app/mcp-connections");
+        const auth = await api<AuthorizeResp>(
+          `/api/orgs/${orgId}/mcp-connections/${r.id}/authorize?returnTo=${returnTo}`,
+        );
+        window.location.href = auth.authorizeUrl;
+        return;
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(typeof err.body === "string" ? err.body : err.message);
@@ -166,9 +264,7 @@ export default function AddConnectionWizard({
                 <option value="bearer">Bearer token</option>
                 <option value="api_key_header">API key in custom header</option>
                 <option value="basic">HTTP Basic (user + pass)</option>
-                <option value="oauth2_authcode" disabled>
-                  OAuth2 — coming soon (issue #8)
-                </option>
+                <option value="oauth2_authcode">OAuth2 (authorization code)</option>
               </select>
             </label>
 
@@ -230,6 +326,84 @@ export default function AddConnectionWizard({
               </>
             )}
 
+            {authMethod === "oauth2_authcode" && (
+              <>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-400">Preset:</span>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset("atlassian")}
+                    className="rounded-md border border-slate-700 px-2 py-1 hover:bg-slate-800"
+                  >
+                    {OAUTH_PRESETS.atlassian.label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset("notion")}
+                    className="rounded-md border border-slate-700 px-2 py-1 hover:bg-slate-800"
+                  >
+                    {OAUTH_PRESETS.notion.label}
+                  </button>
+                </div>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Authorize URL</span>
+                  <input
+                    value={oauthAuthorize}
+                    onChange={(e) => setOauthAuthorize(e.target.value)}
+                    placeholder="https://auth.example.com/authorize"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Token URL</span>
+                  <input
+                    value={oauthToken}
+                    onChange={(e) => setOauthToken(e.target.value)}
+                    placeholder="https://auth.example.com/oauth/token"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Client ID</span>
+                  <input
+                    value={oauthClientId}
+                    onChange={(e) => setOauthClientId(e.target.value)}
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Client secret</span>
+                  <input
+                    type="password"
+                    value={oauthClientSecret}
+                    onChange={(e) => setOauthClientSecret(e.target.value)}
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">Scopes (space-separated)</span>
+                  <input
+                    value={oauthScopes}
+                    onChange={(e) => setOauthScopes(e.target.value)}
+                    placeholder="read:jira-work write:jira-work"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block text-slate-300">
+                    Extra params (JSON object, optional)
+                  </span>
+                  <textarea
+                    value={oauthExtraJSON}
+                    onChange={(e) => setOauthExtraJSON(e.target.value)}
+                    rows={3}
+                    placeholder='{"audience":"api.atlassian.com"}'
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  />
+                </label>
+              </>
+            )}
+
             <div className="flex justify-between gap-2 pt-2">
               <button onClick={() => setStep(1)} className="rounded-md border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800">
                 Back
@@ -261,6 +435,12 @@ export default function AddConnectionWizard({
                     <div>Transport: <span className="text-slate-300">{transport}</span></div>
                     <div>Auth: <span className="text-slate-300">{authMethod}</span></div>
                   </div>
+                  {authMethod === "oauth2_authcode" && (
+                    <div className="mt-3 rounded-md bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                      You'll be redirected to the provider's consent screen
+                      after saving. Tokens are persisted server-side.
+                    </div>
+                  )}
                 </div>
                 {error && <div className="text-sm text-rose-400">{error}</div>}
                 <div className="flex justify-between gap-2 pt-2">
@@ -276,7 +456,13 @@ export default function AddConnectionWizard({
                       onClick={submit}
                       className="rounded-md bg-brand-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-brand-400 disabled:opacity-50"
                     >
-                      {busy ? "Testing…" : "Test & save"}
+                      {busy
+                        ? authMethod === "oauth2_authcode"
+                          ? "Redirecting…"
+                          : "Testing…"
+                        : authMethod === "oauth2_authcode"
+                        ? "Save & authorize"
+                        : "Test & save"}
                     </button>
                   </div>
                 </div>

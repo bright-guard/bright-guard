@@ -75,6 +75,7 @@ export default function AppShell() {
             <SideLink to="/app/mcp-servers">MCP Servers</SideLink>
             <SideLink to="/app/mcp-connections">MCP Connections</SideLink>
             <SideLink to="/app/activity">Activity</SideLink>
+            <SideLink to="/app/callers">Callers</SideLink>
             <SideLink to="/app/settings/sessions">Sessions</SideLink>
           </nav>
         </aside>

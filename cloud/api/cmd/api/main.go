@@ -66,6 +66,7 @@ func main() {
 		log.Fatalf("aead: %v", err)
 	}
 	connections := &store.Connections{Pool: pool, AEAD: aead}
+	callers := &store.Callers{Pool: pool}
 
 	discoveryInterval := time.Hour
 	if v := os.Getenv("DISCOVERY_INTERVAL_MINUTES"); v != "" {
@@ -75,6 +76,18 @@ func main() {
 	}
 	sched := scheduler.New(connections, discovery, discoveryInterval)
 	go sched.Run(rootCtx)
+
+	exposureSweepInterval := 10 * time.Minute
+	if v := os.Getenv("EXPOSURE_SWEEP_INTERVAL_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			exposureSweepInterval = time.Duration(n) * time.Minute
+		}
+	}
+	exposureSweep := scheduler.NewExposureSweep(connections, discovery, exposureSweepInterval)
+	go exposureSweep.Run(rootCtx)
+
+	callerSweep := scheduler.NewCallerSweeper(callers, connections, 5*time.Minute)
+	go callerSweep.Run(rootCtx)
 
 	cookieOpt := auth.CookieOpts{
 		Secure:   cfg.CookieSecure,
@@ -108,6 +121,7 @@ func main() {
 		Activity:    activity,
 		DeviceAuth:  deviceAuth,
 		Connections: connections,
+		Callers:     callers,
 		Scheduler:   sched,
 		Google:      google,
 		Dev:         dev,

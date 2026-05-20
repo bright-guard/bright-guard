@@ -14,7 +14,10 @@ import GatewayDetailPage from "./pages/GatewayDetailPage";
 import MCPServersPage from "./pages/MCPServersPage";
 import MCPServerDetailPage from "./pages/MCPServerDetailPage";
 import ConnectionsPage from "./pages/ConnectionsPage";
+import ConnectionDetailPage from "./pages/ConnectionDetailPage";
 import ActivityPage from "./pages/ActivityPage";
+import CallersPage from "./pages/CallersPage";
+import CallerDetailPage from "./pages/CallerDetailPage";
 import DevicePage from "./pages/DevicePage";
 import SessionsPage from "./pages/SessionsPage";
 
@@ -55,7 +58,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="mcp-servers" element={<MCPServersPage />} />
             <Route path="mcp-servers/:id" element={<MCPServerDetailPage />} />
             <Route path="mcp-connections" element={<ConnectionsPage />} />
+            <Route path="mcp-connections/:id" element={<ConnectionDetailPage />} />
             <Route path="activity" element={<ActivityPage />} />
+            <Route path="callers" element={<CallersPage />} />
+            <Route path="callers/:id" element={<CallerDetailPage />} />
             <Route path="settings/sessions" element={<SessionsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/app" replace />} />

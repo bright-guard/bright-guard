@@ -111,6 +111,7 @@ func (d *Discovery) ListServers(ctx context.Context, orgID uuid.UUID) ([]models.
 	const q = `
 		select s.id, s.org_id, s.gateway_id, s.connection_id, s.name, s.address, s.transport, s.version, s.metadata,
 		       s.first_seen_at, s.last_seen_at,
+		       s.exposure_state, s.exposure_reason, s.exposure_classified_at,
 		       coalesce(g.name, '') as gateway_name,
 		       coalesce(mc.name, '') as connection_name,
 		       coalesce(c.cnt, 0) as capability_count
@@ -135,6 +136,7 @@ func (d *Discovery) ListServers(ctx context.Context, orgID uuid.UUID) ([]models.
 		if err := rows.Scan(
 			&s.ID, &s.OrgID, &s.GatewayID, &s.ConnectionID, &s.Name, &s.Address, &s.Transport, &s.Version, &s.Metadata,
 			&s.FirstSeenAt, &s.LastSeenAt,
+			&s.ExposureState, &s.ExposureReason, &s.ExposureClassifiedAt,
 			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount,
 		); err != nil {
 			return nil, err
@@ -148,6 +150,7 @@ func (d *Discovery) ListServersForGateway(ctx context.Context, orgID, gatewayID 
 	const q = `
 		select s.id, s.org_id, s.gateway_id, s.connection_id, s.name, s.address, s.transport, s.version, s.metadata,
 		       s.first_seen_at, s.last_seen_at,
+		       s.exposure_state, s.exposure_reason, s.exposure_classified_at,
 		       g.name as gateway_name,
 		       '' as connection_name,
 		       coalesce(c.cnt, 0) as capability_count
@@ -171,6 +174,7 @@ func (d *Discovery) ListServersForGateway(ctx context.Context, orgID, gatewayID 
 		if err := rows.Scan(
 			&s.ID, &s.OrgID, &s.GatewayID, &s.ConnectionID, &s.Name, &s.Address, &s.Transport, &s.Version, &s.Metadata,
 			&s.FirstSeenAt, &s.LastSeenAt,
+			&s.ExposureState, &s.ExposureReason, &s.ExposureClassifiedAt,
 			&s.GatewayName, &s.ConnectionName, &s.CapabilityCount,
 		); err != nil {
 			return nil, err
@@ -185,6 +189,7 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 	const sq = `
 		select s.id, s.org_id, s.gateway_id, s.connection_id, s.name, s.address, s.transport, s.version, s.metadata,
 		       s.first_seen_at, s.last_seen_at,
+		       s.exposure_state, s.exposure_reason, s.exposure_classified_at,
 		       coalesce(g.name, ''), coalesce(mc.name, '')
 		from mcp_servers s
 		left join gateways g on g.id = s.gateway_id
@@ -192,7 +197,9 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 		where s.org_id = $1 and s.id = $2`
 	err := d.Pool.QueryRow(ctx, sq, orgID, id).Scan(
 		&det.ID, &det.OrgID, &det.GatewayID, &det.ConnectionID, &det.Name, &det.Address, &det.Transport, &det.Version, &det.Metadata,
-		&det.FirstSeenAt, &det.LastSeenAt, &det.GatewayName, &det.ConnectionName,
+		&det.FirstSeenAt, &det.LastSeenAt,
+		&det.ExposureState, &det.ExposureReason, &det.ExposureClassifiedAt,
+		&det.GatewayName, &det.ConnectionName,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
