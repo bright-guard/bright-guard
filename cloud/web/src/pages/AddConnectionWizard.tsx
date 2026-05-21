@@ -51,38 +51,63 @@ const OAUTH_PRESETS: Record<string, OAuthPreset> = {
   },
 };
 
-// Quick-start tiles rendered at the top of step 1. Each pre-fills the OAuth
-// auth method + URLs so an admin connecting to a known provider doesn't have
-// to navigate two steps deep into the wizard to discover the OAuth path.
+// Quick-start tiles rendered at the top of step 1. Each pre-fills the
+// connection name + endpoint URL + transport + OAuth method so an admin
+// connecting to a known remote MCP server doesn't have to type anything but
+// "Save". The actual OAuth endpoints come from the MCP server's
+// /.well-known/oauth-authorization-server metadata via DCR — we deliberately
+// do NOT apply the OAUTH_PRESETS general-API URLs here (they point at the
+// provider's main OAuth, not the MCP server's, and would silently break
+// manual-mode fallback if DCR fails).
 type QuickStartTile = {
-  key: "atlassian" | "notion" | "custom";
+  key: "atlassian" | "notion" | "linear" | "sentry" | "custom";
   label: string;
   hint: string;
   defaultName: string;
-  endpointPlaceholder: string;
+  endpointUrl: string;
+  transport: MCPConnectionTransport;
 };
 
 const QUICK_START_TILES: QuickStartTile[] = [
   {
     key: "atlassian",
     label: "Atlassian / Jira",
-    hint: "OAuth2 · pre-fills Atlassian endpoints",
+    hint: "mcp.atlassian.com · SSE · DCR",
     defaultName: "atlassian-mcp",
-    endpointPlaceholder: "https://your-instance.atlassian.net/mcp/v1",
+    endpointUrl: "https://mcp.atlassian.com/v1/sse",
+    transport: "sse",
   },
   {
     key: "notion",
     label: "Notion",
-    hint: "OAuth2 · pre-fills Notion endpoints",
+    hint: "mcp.notion.com · SSE · DCR",
     defaultName: "notion-mcp",
-    endpointPlaceholder: "https://api.notion.com/mcp",
+    endpointUrl: "https://mcp.notion.com/sse",
+    transport: "sse",
+  },
+  {
+    key: "linear",
+    label: "Linear",
+    hint: "mcp.linear.app · SSE · DCR",
+    defaultName: "linear-mcp",
+    endpointUrl: "https://mcp.linear.app/sse",
+    transport: "sse",
+  },
+  {
+    key: "sentry",
+    label: "Sentry",
+    hint: "mcp.sentry.dev · SSE · DCR",
+    defaultName: "sentry-mcp",
+    endpointUrl: "https://mcp.sentry.dev/sse",
+    transport: "sse",
   },
   {
     key: "custom",
     label: "Custom",
     hint: "Bearer / API key / OAuth2 — your choice",
     defaultName: "",
-    endpointPlaceholder: "https://mcp.example.com/v1",
+    endpointUrl: "",
+    transport: "streamable-http",
   },
 ];
 
@@ -122,9 +147,6 @@ export default function AddConnectionWizard({
   const [result, setResult] = useState<MCPConnection | null>(null);
 
   const [quickStart, setQuickStart] = useState<QuickStartTile["key"] | null>(null);
-  const endpointPlaceholder =
-    QUICK_START_TILES.find((t) => t.key === quickStart)?.endpointPlaceholder ??
-    "https://mcp.example.com/v1";
 
   function applyPreset(key: string) {
     const p = OAUTH_PRESETS[key];
@@ -138,15 +160,16 @@ export default function AddConnectionWizard({
   function selectQuickStart(tile: QuickStartTile) {
     setQuickStart(tile.key);
     if (!name.trim() && tile.defaultName) setName(tile.defaultName);
-    if (tile.key === "atlassian" || tile.key === "notion") {
+    if (tile.endpointUrl) setEndpointUrl(tile.endpointUrl);
+    setTransport(tile.transport);
+    if (tile.key !== "custom") {
       setAuthMethod("oauth2_authcode");
-      // Default to DCR (auto-discover) — MCP-spec-compliant servers expose
-      // registration_endpoint and we mint our own client per RFC 7591, so the
-      // user does NOT need a pre-registered client_id/secret. The preset URLs
-      // are still applied so they're pre-filled if DCR fails and the wizard
-      // bounces the user into manual mode.
+      // DCR (auto-discover) is the spec-required happy path for remote MCP
+      // servers: the server publishes its OAuth metadata at /.well-known/
+      // oauth-authorization-server and we register a fresh client per
+      // install. No client_id/secret to paste. If DCR fails, the wizard
+      // bounces to manual mode with a structured error.
       setOauthMode("auto");
-      applyPreset(tile.key);
     }
   }
 
@@ -312,7 +335,7 @@ export default function AddConnectionWizard({
               <div className="mb-1 text-xs uppercase tracking-wider text-slate-400">
                 Quick start
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {QUICK_START_TILES.map((t) => {
                   const active = quickStart === t.key;
                   return (
@@ -333,14 +356,14 @@ export default function AddConnectionWizard({
                   );
                 })}
               </div>
-              {(quickStart === "atlassian" || quickStart === "notion") && (
+              {quickStart && quickStart !== "custom" && (
                 <div className="mt-2 rounded-md border border-brand-500/40 bg-brand-500/5 px-3 py-2 text-xs text-slate-300">
                   OAuth2 + Dynamic Client Registration. No client ID or secret
-                  required — Bright Guard registers a client with{" "}
-                  {quickStart === "atlassian" ? "Atlassian" : "Notion"} on save,
-                  then redirects you to approve access. If the server doesn't
-                  support DCR you'll be bounced to manual mode with the URLs
-                  pre-filled.
+                  required — Bright Guard probes the MCP server's
+                  /.well-known/oauth-authorization-server metadata and
+                  registers a client per RFC 7591, then redirects you to
+                  approve access. If the server doesn't support DCR you'll be
+                  bounced to manual mode.
                 </div>
               )}
             </div>
@@ -359,7 +382,7 @@ export default function AddConnectionWizard({
               <span className="mb-1 block text-slate-300">Endpoint URL</span>
               <input
                 required
-                placeholder={endpointPlaceholder}
+                placeholder="https://mcp.example.com/v1"
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
                 className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
