@@ -261,7 +261,7 @@ export default function AddConnectionWizard({
                 placeholder="github-mcp"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
               />
             </label>
             <label className="block text-sm">
@@ -271,7 +271,7 @@ export default function AddConnectionWizard({
                 placeholder="https://mcp.example.com/v1"
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
               />
             </label>
             <label className="block text-sm">
@@ -279,7 +279,7 @@ export default function AddConnectionWizard({
               <select
                 value={transport}
                 onChange={(e) => setTransport(e.target.value as MCPConnectionTransport)}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
               >
                 <option value="streamable-http">streamable-http (recommended)</option>
                 <option value="sse">sse</option>
@@ -308,7 +308,7 @@ export default function AddConnectionWizard({
               <select
                 value={authMethod}
                 onChange={(e) => setAuthMethod(e.target.value as MCPConnectionAuthMethod)}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
               >
                 <option value="bearer">Bearer token</option>
                 <option value="api_key_header">API key in custom header</option>
@@ -325,7 +325,7 @@ export default function AddConnectionWizard({
                   autoFocus
                   value={bearerToken}
                   onChange={(e) => setBearerToken(e.target.value)}
-                  className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                  className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                 />
               </label>
             )}
@@ -337,7 +337,7 @@ export default function AddConnectionWizard({
                   <input
                     value={headerName}
                     onChange={(e) => setHeaderName(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -346,7 +346,7 @@ export default function AddConnectionWizard({
                     type="password"
                     value={headerValue}
                     onChange={(e) => setHeaderValue(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
               </>
@@ -360,7 +360,7 @@ export default function AddConnectionWizard({
                     autoFocus
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -369,7 +369,7 @@ export default function AddConnectionWizard({
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
                   />
                 </label>
               </>
@@ -445,7 +445,7 @@ export default function AddConnectionWizard({
                     value={oauthAuthorize}
                     onChange={(e) => setOauthAuthorize(e.target.value)}
                     placeholder="https://auth.example.com/authorize"
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -454,7 +454,7 @@ export default function AddConnectionWizard({
                     value={oauthToken}
                     onChange={(e) => setOauthToken(e.target.value)}
                     placeholder="https://auth.example.com/oauth/token"
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -462,7 +462,7 @@ export default function AddConnectionWizard({
                   <input
                     value={oauthClientId}
                     onChange={(e) => setOauthClientId(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -471,7 +471,7 @@ export default function AddConnectionWizard({
                     type="password"
                     value={oauthClientSecret}
                     onChange={(e) => setOauthClientSecret(e.target.value)}
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -480,7 +480,7 @@ export default function AddConnectionWizard({
                     value={oauthScopes}
                     onChange={(e) => setOauthScopes(e.target.value)}
                     placeholder="read:jira-work write:jira-work"
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 <label className="block text-sm">
@@ -492,7 +492,7 @@ export default function AddConnectionWizard({
                     onChange={(e) => setOauthExtraJSON(e.target.value)}
                     rows={3}
                     placeholder='{"audience":"api.atlassian.com"}'
-                    className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
+                    className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono focus:border-brand-500 focus:outline-none"
                   />
                 </label>
                 </>
