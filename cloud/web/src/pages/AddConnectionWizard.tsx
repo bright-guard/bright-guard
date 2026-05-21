@@ -140,7 +140,12 @@ export default function AddConnectionWizard({
     if (!name.trim() && tile.defaultName) setName(tile.defaultName);
     if (tile.key === "atlassian" || tile.key === "notion") {
       setAuthMethod("oauth2_authcode");
-      setOauthMode("manual");
+      // Default to DCR (auto-discover) — MCP-spec-compliant servers expose
+      // registration_endpoint and we mint our own client per RFC 7591, so the
+      // user does NOT need a pre-registered client_id/secret. The preset URLs
+      // are still applied so they're pre-filled if DCR fails and the wizard
+      // bounces the user into manual mode.
+      setOauthMode("auto");
       applyPreset(tile.key);
     }
   }
@@ -330,10 +335,12 @@ export default function AddConnectionWizard({
               </div>
               {(quickStart === "atlassian" || quickStart === "notion") && (
                 <div className="mt-2 rounded-md border border-brand-500/40 bg-brand-500/5 px-3 py-2 text-xs text-slate-300">
-                  OAuth2 pre-configured. After saving you'll be redirected to{" "}
-                  {quickStart === "atlassian" ? "Atlassian" : "Notion"} to approve
-                  access. You'll still need a <strong>client ID + secret</strong>{" "}
-                  on step 2.
+                  OAuth2 + Dynamic Client Registration. No client ID or secret
+                  required — Bright Guard registers a client with{" "}
+                  {quickStart === "atlassian" ? "Atlassian" : "Notion"} on save,
+                  then redirects you to approve access. If the server doesn't
+                  support DCR you'll be bounced to manual mode with the URLs
+                  pre-filled.
                 </div>
               )}
             </div>
