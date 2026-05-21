@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // ErrDCRUnsupported signals that the remote MCP endpoint (or its authorization
@@ -133,12 +135,26 @@ func Probe(ctx context.Context, endpointURL string) (*DCRMetadata, error) {
 	if !isAbsoluteHTTPS(asMeta.AuthorizationEndpoint) || !isAbsoluteHTTPS(asMeta.TokenEndpoint) {
 		return nil, fmt.Errorf("%w: AS endpoints must be absolute https URLs", ErrDCRUnsupported)
 	}
-	// Defense in depth: the registration_endpoint must live on the same origin
-	// as the AS metadata document. Otherwise a compromised metadata response
-	// could redirect us to register at an attacker-controlled URL and leak the
-	// generated client_secret + future access tokens.
-	if !sameOrigin(asMetaURL, asMeta.RegistrationEndpoint) {
-		return nil, fmt.Errorf("%w: registration_endpoint origin does not match authorization server", ErrDCRUnsupported)
+	// Defense in depth: the registration_endpoint (and the rest of the AS
+	// endpoints) must live on the same registrable domain as the AS metadata
+	// document. Otherwise a compromised metadata response could redirect us to
+	// register at an attacker-controlled URL and leak the generated
+	// client_secret + future access tokens. Same-registrable-domain (rather
+	// than same-origin) is required because real-world providers — Atlassian
+	// being the canonical example — front the MCP endpoint on one subdomain
+	// (mcp.atlassian.com) and the OAuth backend on another (cf.mcp.atlassian.com).
+	for label, ep := range map[string]string{
+		"registration_endpoint":  asMeta.RegistrationEndpoint,
+		"authorization_endpoint": asMeta.AuthorizationEndpoint,
+		"token_endpoint":         asMeta.TokenEndpoint,
+	} {
+		ok, err := sameRegistrableDomain(asMetaURL, ep)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s host check: %v", ErrDCRUnsupported, label, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("%w: %s registrable domain does not match authorization server", ErrDCRUnsupported, label)
+		}
 	}
 
 	return &DCRMetadata{
@@ -314,4 +330,31 @@ func sameOrigin(a, b string) bool {
 		return false
 	}
 	return ua.Scheme == ub.Scheme && ua.Host == ub.Host
+}
+
+// sameRegistrableDomain returns true when both URLs resolve to the same
+// registrable domain (eTLD+1) per the public suffix list — e.g.
+// mcp.atlassian.com and cf.mcp.atlassian.com both yield atlassian.com. Hosts
+// that aren't dotted DNS names (IP literals, single-label hosts used by tests)
+// fall through to exact host equality.
+func sameRegistrableDomain(a, b string) (bool, error) {
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false, err
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false, err
+	}
+	if ua.Scheme != ub.Scheme {
+		return false, nil
+	}
+	ha, hb := ua.Hostname(), ub.Hostname()
+	ra, errA := publicsuffix.EffectiveTLDPlusOne(ha)
+	rb, errB := publicsuffix.EffectiveTLDPlusOne(hb)
+	if errA != nil || errB != nil {
+		// Fall back to exact host match for non-DNS hosts (IPs, single-label).
+		return ha == hb, nil
+	}
+	return ra == rb, nil
 }

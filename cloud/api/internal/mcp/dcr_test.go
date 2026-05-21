@@ -204,3 +204,57 @@ func TestRegisterClient_HTTPError(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestSameRegistrableDomain(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		// Atlassian-style: MCP server at one subdomain, OAuth backend at another,
+		// both rooted at atlassian.com. This is the load-bearing case.
+		{
+			"atlassian cross-subdomain",
+			"https://mcp.atlassian.com/.well-known/oauth-authorization-server",
+			"https://cf.mcp.atlassian.com/v1/register",
+			true,
+		},
+		{
+			"same host",
+			"https://idp.example.com/.well-known/oauth-authorization-server",
+			"https://idp.example.com/register",
+			true,
+		},
+		// Attacker case — both have eTLD+1 but they differ.
+		{
+			"different registrable domain",
+			"https://idp.example.com/.well-known/oauth-authorization-server",
+			"https://attacker.example.org/register",
+			false,
+		},
+		// IP literals fall back to exact-host equality.
+		{
+			"ip literal same host",
+			"http://127.0.0.1:8080/.well-known/oauth-authorization-server",
+			"http://127.0.0.1:8080/register",
+			true,
+		},
+		{
+			"ip literal different host",
+			"http://127.0.0.1:8080/.well-known/oauth-authorization-server",
+			"http://evil.example.com/register",
+			false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sameRegistrableDomain(tc.a, tc.b)
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("sameRegistrableDomain(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
