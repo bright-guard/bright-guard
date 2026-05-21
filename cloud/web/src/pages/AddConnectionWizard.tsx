@@ -51,6 +51,41 @@ const OAUTH_PRESETS: Record<string, OAuthPreset> = {
   },
 };
 
+// Quick-start tiles rendered at the top of step 1. Each pre-fills the OAuth
+// auth method + URLs so an admin connecting to a known provider doesn't have
+// to navigate two steps deep into the wizard to discover the OAuth path.
+type QuickStartTile = {
+  key: "atlassian" | "notion" | "custom";
+  label: string;
+  hint: string;
+  defaultName: string;
+  endpointPlaceholder: string;
+};
+
+const QUICK_START_TILES: QuickStartTile[] = [
+  {
+    key: "atlassian",
+    label: "Atlassian / Jira",
+    hint: "OAuth2 · pre-fills Atlassian endpoints",
+    defaultName: "atlassian-mcp",
+    endpointPlaceholder: "https://your-instance.atlassian.net/mcp/v1",
+  },
+  {
+    key: "notion",
+    label: "Notion",
+    hint: "OAuth2 · pre-fills Notion endpoints",
+    defaultName: "notion-mcp",
+    endpointPlaceholder: "https://api.notion.com/mcp",
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    hint: "Bearer / API key / OAuth2 — your choice",
+    defaultName: "",
+    endpointPlaceholder: "https://mcp.example.com/v1",
+  },
+];
+
 export default function AddConnectionWizard({
   orgId,
   onClose,
@@ -86,6 +121,11 @@ export default function AddConnectionWizard({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MCPConnection | null>(null);
 
+  const [quickStart, setQuickStart] = useState<QuickStartTile["key"] | null>(null);
+  const endpointPlaceholder =
+    QUICK_START_TILES.find((t) => t.key === quickStart)?.endpointPlaceholder ??
+    "https://mcp.example.com/v1";
+
   function applyPreset(key: string) {
     const p = OAUTH_PRESETS[key];
     if (!p) return;
@@ -93,6 +133,16 @@ export default function AddConnectionWizard({
     setOauthToken(p.tokenUrl);
     setOauthScopes(p.scopes);
     setOauthExtraJSON(p.extraParams);
+  }
+
+  function selectQuickStart(tile: QuickStartTile) {
+    setQuickStart(tile.key);
+    if (!name.trim() && tile.defaultName) setName(tile.defaultName);
+    if (tile.key === "atlassian" || tile.key === "notion") {
+      setAuthMethod("oauth2_authcode");
+      setOauthMode("manual");
+      applyPreset(tile.key);
+    }
   }
 
   function step1Ready(): boolean {
@@ -253,6 +303,40 @@ export default function AddConnectionWizard({
 
         {step === 1 && (
           <div className="space-y-4">
+            <div>
+              <div className="mb-1 text-xs uppercase tracking-wider text-slate-400">
+                Quick start
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {QUICK_START_TILES.map((t) => {
+                  const active = quickStart === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => selectQuickStart(t)}
+                      className={
+                        "rounded-md border px-3 py-2 text-left text-xs transition " +
+                        (active
+                          ? "border-brand-500 bg-brand-500/10 text-slate-100"
+                          : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500")
+                      }
+                    >
+                      <span className="block text-sm font-semibold">{t.label}</span>
+                      <span className="block text-[11px] text-slate-400">{t.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {(quickStart === "atlassian" || quickStart === "notion") && (
+                <div className="mt-2 rounded-md border border-brand-500/40 bg-brand-500/5 px-3 py-2 text-xs text-slate-300">
+                  OAuth2 pre-configured. After saving you'll be redirected to{" "}
+                  {quickStart === "atlassian" ? "Atlassian" : "Notion"} to approve
+                  access. You'll still need a <strong>client ID + secret</strong>{" "}
+                  on step 2.
+                </div>
+              )}
+            </div>
             <label className="block text-sm">
               <span className="mb-1 block text-slate-300">Name</span>
               <input
@@ -268,7 +352,7 @@ export default function AddConnectionWizard({
               <span className="mb-1 block text-slate-300">Endpoint URL</span>
               <input
                 required
-                placeholder="https://mcp.example.com/v1"
+                placeholder={endpointPlaceholder}
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
                 className="w-full rounded-md border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm font-mono placeholder:text-slate-500 focus:border-brand-500 focus:outline-none"
