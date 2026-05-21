@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
+import { useNavigate } from "react-router-dom";
 import { useChat } from "../hooks/useChat";
 import type { ChatUiMessage } from "./ChatProvider";
 
@@ -207,6 +208,37 @@ function EmptyState({ onPick }: { onPick: (s: string) => void }) {
 }
 
 function MessageBubble({ m }: { m: ChatUiMessage }) {
+  const navigate = useNavigate();
+  const proseRef = useRef<HTMLDivElement | null>(null);
+
+  // Internal /app/... links should route via react-router; external links
+  // get target=_blank + rel=noopener. We use one delegated handler per
+  // assistant bubble so the marked output stays plain HTML.
+  useEffect(() => {
+    const el = proseRef.current;
+    if (!el) return;
+    // Annotate external links once on mount / when html changes.
+    el.querySelectorAll("a[href]").forEach((node) => {
+      const a = node as HTMLAnchorElement;
+      const href = a.getAttribute("href") || "";
+      if (!href.startsWith("/")) {
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+      }
+    });
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest("a");
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      if (!href.startsWith("/")) return; // external — let the browser handle it
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
+      e.preventDefault();
+      navigate(href);
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, [m.text, navigate]);
+
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -231,6 +263,7 @@ function MessageBubble({ m }: { m: ChatUiMessage }) {
         )}
         {m.text && (
           <div
+            ref={proseRef}
             className="docs-prose rounded-lg bg-slate-50 px-3 py-2 text-[14px]"
             dangerouslySetInnerHTML={{ __html: html }}
           />

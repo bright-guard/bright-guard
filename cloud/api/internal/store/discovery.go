@@ -500,6 +500,95 @@ func (d *Discovery) GetServerDetail(ctx context.Context, orgID, id uuid.UUID) (*
 	return det, irows.Err()
 }
 
+// CapabilityRow is a flat join of a capability with its server, used by the
+// chat agent's list_capabilities tool so the model can answer cross-server
+// capability questions in one round-trip.
+type CapabilityRow struct {
+	ID          uuid.UUID `json:"id"`
+	ServerID    uuid.UUID `json:"serverId"`
+	ServerName  string    `json:"serverName"`
+	Kind        string    `json:"kind"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Enabled     bool      `json:"enabled"`
+}
+
+// CapabilityFilter narrows ListCapabilitiesForOrg. Empty fields are ignored.
+type CapabilityFilter struct {
+	ServerID     *uuid.UUID
+	Kind         string
+	NameContains string
+	Limit        int
+}
+
+// ListCapabilitiesForOrg returns capabilities across all the org's servers,
+// optionally filtered by server, kind, and case-insensitive name substring.
+// Caller is responsible for sane Limit; zero means "no limit" — chat tool
+// clamps before calling.
+func (d *Discovery) ListCapabilitiesForOrg(ctx context.Context, orgID uuid.UUID, f CapabilityFilter) ([]CapabilityRow, error) {
+	args := []any{orgID}
+	where := "s.org_id = $1"
+	if f.ServerID != nil {
+		args = append(args, *f.ServerID)
+		where += " and s.id = $" + itoa(len(args))
+	}
+	if f.Kind != "" {
+		args = append(args, f.Kind)
+		where += " and c.kind = $" + itoa(len(args))
+	}
+	if f.NameContains != "" {
+		args = append(args, "%"+f.NameContains+"%")
+		where += " and c.name ilike $" + itoa(len(args))
+	}
+	q := `
+		select c.id, s.id, s.name, c.kind, c.name, coalesce(c.description, ''), c.enabled
+		from mcp_capabilities c
+		join mcp_servers s on s.id = c.mcp_server_id
+		where ` + where + `
+		order by s.name asc, c.kind asc, c.name asc`
+	if f.Limit > 0 {
+		args = append(args, f.Limit)
+		q += " limit $" + itoa(len(args))
+	}
+	rows, err := d.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CapabilityRow{}
+	for rows.Next() {
+		var r CapabilityRow
+		if err := rows.Scan(&r.ID, &r.ServerID, &r.ServerName, &r.Kind, &r.Name, &r.Description, &r.Enabled); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// itoa is a local-tiny strconv.Itoa to avoid an extra import in this file.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
+
 // nullableWorkload turns an optional workload bag into four *string values
 // suitable for direct pgx parameter binding — empty strings (and a nil bag)
 // become NULL so the mcp_invocations columns stay sparse for older / partial

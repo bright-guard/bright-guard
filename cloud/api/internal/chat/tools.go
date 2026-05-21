@@ -75,6 +75,7 @@ func NewDispatcher(
 	d.registerActivityTools()
 	d.registerDashboardTools()
 	d.registerPoliciesTools()
+	d.registerCapabilitiesTools()
 	return d
 }
 
@@ -108,7 +109,30 @@ Rules:
 - Be concise. Prefer short bulleted lists and small tables when listing entities.
 - If a tool returns zero results, say so plainly instead of speculating.
 - For counts and aggregates, cite the time window you used.
-- This is a read-only assistant: you cannot toggle capabilities, create policies, or change anything. If asked, say so and point to the relevant page in the SPA.`
+- This is a read-only assistant: you cannot toggle capabilities, create policies, or change anything. If asked, say so and point to the relevant page in the SPA.
+
+Deep links:
+When you reference specific items in your answer, include a markdown link to the relevant page in the Bright Guard SPA. Use these URL patterns exactly:
+
+  - Activity timeline (filtered):
+    /app/activity?range=7d&status=denied&serverId={server_id}
+  - Specific MCP server:
+    /app/mcp-servers/{server_id}
+  - Specific caller:
+    /app/callers/{caller_id}
+  - Specific gateway:
+    /app/gateways/{gateway_id}
+  - Specific policy:
+    /app/policies/{policy_id}
+  - Policies list:
+    /app/policies
+  - Servers list (with exposure filter):
+    /app/mcp-servers?exposure=public
+
+Render links with concise, natural-language anchor text. Example:
+  "Three of your servers are publicly exposed: [github-mcp](/app/mcp-servers/abc-123), [jira-mcp](/app/mcp-servers/def-456), [slack-mcp](/app/mcp-servers/ghi-789)."
+
+Only link to items that actually exist in your tool-call results. Never invent IDs.`
 
 // schema is a tiny helper to turn a Go literal into the JSON-Schema raw bytes
 // the request body expects.

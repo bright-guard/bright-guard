@@ -272,6 +272,56 @@ func (p *Policies) DecisionsForInvocations(
 	return out, rows.Err()
 }
 
+// PolicyDecisionRow is a flat shape for the chat agent's get_policy tool —
+// one matched decision joined with the originating invocation's server,
+// capability, and caller label so the model can render compact references
+// without any extra round-trips.
+type PolicyDecisionRow struct {
+	InvocationID uuid.UUID `json:"invocationId"`
+	At           time.Time `json:"at"`
+	ServerID     uuid.UUID `json:"serverId"`
+	ServerName   string    `json:"serverName"`
+	Capability   string    `json:"capability"`
+	CallerLabel  string    `json:"callerLabel"`
+	Decision     string    `json:"decision"`
+}
+
+// RecentDecisionsForPolicy returns the most recent N matched decisions for a
+// given policy, joined with the invocation, server, and caller (if any). The
+// policy is org-scoped: a foreign policy_id returns an empty slice.
+func (p *Policies) RecentDecisionsForPolicy(ctx context.Context, orgID, policyID uuid.UUID, limit int) ([]PolicyDecisionRow, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	const q = `
+		select d.invocation_id, d.at, s.id, s.name,
+		       (i.capability_kind || ':' || i.capability_name) as capability,
+		       coalesce(oc.label, '') as caller_label,
+		       d.action
+		from mcp_invocation_decisions d
+		join policies pol on pol.id = d.policy_id and pol.org_id = $1
+		join mcp_invocations i on i.id = d.invocation_id
+		join mcp_servers s on s.id = i.mcp_server_id
+		left join org_callers oc on oc.org_id = i.org_id and oc.caller = i.caller
+		where d.policy_id = $2 and d.matched = true
+		order by d.at desc
+		limit $3`
+	rows, err := p.Pool.Query(ctx, q, orgID, policyID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PolicyDecisionRow{}
+	for rows.Next() {
+		var r PolicyDecisionRow
+		if err := rows.Scan(&r.InvocationID, &r.At, &r.ServerID, &r.ServerName, &r.Capability, &r.CallerLabel, &r.Decision); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ListOrgsWithDuePolicies returns up to `limit` org_ids that have enabled
 // policies. Used by the sweep tick to bound work per cycle.
 func (p *Policies) ListOrgsWithDuePolicies(ctx context.Context, limit int) ([]uuid.UUID, error) {
